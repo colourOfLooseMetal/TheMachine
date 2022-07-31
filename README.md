@@ -1,4 +1,4 @@
-# featuring wams\
+# featuring wams
   web assembly machine searcher, a fuzzy string search method created specifically for searching the machine\
   uses a combination of fuzzy bitap to filter and kinda uses a sliding window jaro/ngram method to score, and scores based on match index,\
   but like c++ is hard and im tired so instead of explaining the scoring method take a look at the scores for the search term "hello"\
