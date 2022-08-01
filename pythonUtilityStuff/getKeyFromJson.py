@@ -19,5 +19,6 @@ with open('./machineTestText.json') as json_file:
 for dict in data:
     text.append(remove_non_ascii_2(dict["text"]).lower().replace("  ", " ").replace("\n", " "))
 
-with open('machineTextTextCombined.txt', 'w') as out_file:
-    json.dump(text, out_file)
+print(len(text))
+# with open('machineTextTextCombined.txt', 'w') as out_file:
+#     json.dump(text, out_file)

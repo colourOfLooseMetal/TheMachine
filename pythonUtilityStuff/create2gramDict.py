@@ -26,6 +26,8 @@ with open('./machineTestText.json') as json_file:
 for dict in data:
     text.append(remove_non_ascii_2(dict["text"]).lower().replace("  ", " ").replace("\n", " "))
 
+print(len(text))
+input()
 
 allLetters = list(string.ascii_lowercase)#set(("a","b"))
 allLetters.append(" ")

@@ -1,0 +1,644 @@
+<!DOCTYPE HTML>
+<!--
+	A Slightly modified veersion of Future Imperfect by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>sailorMood</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+		<!-- <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.4.1"></script> -->
+
+		<script>
+			//when a search option is checked all other search options are unchecked
+			function advancedSearchCheck(){
+				if (document.getElementById("advancedSearch").checked){
+					//console.log("checked")
+					document.getElementById("tag").checked = false;
+					document.getElementById("episode").checked = false;
+				}
+			}
+			function episodeCheck(){
+				if (document.getElementById("episode").checked){
+					//console.log("checked")
+					document.getElementById("tag").checked = false;
+					document.getElementById("advancedSearch").checked = false;
+				}
+			}
+			function tagCheck(){
+				if (document.getElementById("tag").checked){
+					//console.log("checked")
+					document.getElementById("advancedSearch").checked = false;
+					document.getElementById("episode").checked = false;
+				}
+			}
+			//select or deselect all show options when buttton pressed, excludes search option checkboxes
+			function selectAll() {
+				x = document.getElementsByClassName("custom-control-input"); // Check
+				for(i = 0; i < x.length; i++){
+					if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch'){
+						x[i].checked = true;
+					}
+				}
+			}
+			function deselectAll() {
+				x = document.getElementsByClassName("custom-control-input"); // Check
+				for(i = 0; i < x.length; i++){
+					if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch'){
+						x[i].checked = false;
+					}
+				}
+			}
+		  function darkMode() {
+			$("body").toggleClass("dark-mode");
+			$("body *").toggleClass("dark-mode");
+		  }
+		  function generateTxtFile(){
+			var changesString = ""
+			//iterate through saved user chanegs and save each one to a string in a way that will be easy to read in python
+			for (var i = 0; i < changeList.length; i++) {
+				changesString += changeList[i][0] +","+ changeList[i][1] + "\n"
+			}
+			//send the string to the download function and clear the changelist
+			download("changes.txt", changesString)
+			alert("thank you so much for helping (✿◠‿◠) please email the text file that was just downloaded to colourofloosemetal@gmail.com and I will make the updates as soon as possible");
+			changeList = [];
+		  }
+		  //download the changes as a txt file
+		  function download(filename, text) {
+			var element = document.createElement('a');
+			element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+			element.setAttribute('download', filename);
+	
+			element.style.display = 'none';
+			document.body.appendChild(element);
+	
+			element.click();
+	
+			document.body.removeChild(element);
+		  }
+		</script>
+		<title>Omega Searcher</title>
+	</head>
+	<body class="single is-preload">
+		<div id="loading">
+			loading page...
+		  </div>
+		<!-- Wrapper -->
+			<div id="wrapper">
+
+				<!-- Header -->
+					<header id="header">
+						<h1><a href="http://colourofloosemetal.com/">The Colour of loose metal</a></h1>
+						<nav class="links">
+							<ul>
+								<li><a href="http://colourofloosemetal.com/sailormoodabout.html">About this page</a></li>
+							</ul>
+						</nav>
+						<nav class="main">
+							<ul>
+								<li class="menu">
+									<a class="fa-bars" href="#menu">Menu</a>
+								</li>
+							</ul>
+						</nav>
+					</header>
+
+				<!-- Menu -->
+					<section id="menu">
+
+
+						<!-- Links -->
+							<section>
+								<ul class="links">
+									<li>
+											<h3>Search options for advanced search</h3>
+											<p>*important* White space acts as an AND operator, while a single pipe (|) character acts as an OR operator. To escape white space, use double quote ex. ="scheme language" for exact match.<p>
+										<table><thead><tr><th>Token</th> <th>Match type</th> <th>Description</th></tr></thead> <tbody><tr><td><code>jscript</code></td> <td>fuzzy-match</td> <td>Items that fuzzy match <code>jscript</code></td></tr> <tr><td><code>=scheme</code></td> <td>exact-match</td> <td>Items that are <code>scheme</code></td></tr> <tr><td><code>'python</code></td> <td>include-match</td> <td>Items that include <code>python</code></td></tr> <tr><td><code>!ruby</code></td> <td>inverse-exact-match</td> <td>Items that do not include <code>ruby</code></td></tr> <tr><td><code>^java</code></td> <td>prefix-exact-match</td> <td>Items that start with <code>java</code></td></tr> <tr><td><code>!^earlang</code></td> <td>inverse-prefix-exact-match</td> <td>Items that do not start with <code>earlang</code></td></tr> <tr><td><code>.js$</code></td> <td>suffix-exact-match</td> <td>Items that end with <code>.js</code></td></tr> <tr><td><code>!.go$</code></td> <td>inverse-suffix-exact-match</td> <td>Items that do not end with <code>.go</code></td></tr></tbody></table>
+										
+									</li>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="sailorMoon" checked>
+										<label class="custom-control-label" for="sailorMoon">sailorMoon</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="dragonBall" checked>
+										<label class="custom-control-label" for="dragonBall">dragonBall</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="jojo" checked>
+										<label class="custom-control-label" for="jojo">jojo</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="dbz" checked>
+										<label class="custom-control-label" for="dbz">dbz</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="dbzMov" checked>
+										<label class="custom-control-label" for="dbzMov">dbzMov</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="recess" checked>
+										<label class="custom-control-label" for="recess">recess</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="swPrequels" checked>
+										<label class="custom-control-label" for="swPrequels">starwars prequels</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="cw2003" checked>
+										<label class="custom-control-label" for="cw2003">clone wars 2003(2d)</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="looneyTunes" checked>
+										<label class="custom-control-label" for="looneyTunes">looney Tunes</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="ghibli" checked>
+										<label class="custom-control-label" for="ghibli">ghibli</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="JohnnyBravo" checked>
+										<label class="custom-control-label" for="JohnnyBravo">Johnny Bravo</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="disPix" checked>
+										<label class="custom-control-label" for="disPix">Disney Pixar</label>
+									</div>
+								</ul>
+								<button onclick="selectAll()">Select All</button>
+								<button onclick="deselectAll()">Deselect All</button>
+							</section>
+
+					</section>
+
+				<!-- Main -->
+					<div id="main">
+
+						<!-- Post -->
+							<article class="post">
+								<header>
+									<div class="title">
+										<h2><a href="#">The Machine</a></h2>
+										<p>do not distribtue pls lol</p>
+									</div>
+									
+								</header>
+
+								<h5>Search Options</h5>
+								<div class="row" id="checkboxes">
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="tag" onclick="tagCheck()" unchecked>
+										<label class="custom-control-label" for="tag">tagSearch</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="episode" onclick="episodeCheck()" unchecked>
+										<label class="custom-control-label" for="episode">episode number</label>
+									</div>
+									<div class="custom-control custom-checkbox">
+										<input type="checkbox" class="custom-control-input" id="advancedSearch" onclick="advancedSearchCheck()" checked>
+										<label class="custom-control-label" for="advancedSearch">advanced text search</label>
+									</div>
+
+									<!-- <label><input type="checkbox" id="text" checked /> text</label>
+									<label><input type="checkbox" id="episode" unchecked /> episode number</label>
+									<label id="contribCheckBox"><input type="checkbox" id="contrib" unchecked /> edit mode</label> -->
+								</div>
+								
+								
+								<div class="form-group">
+									<input
+										type="input"
+										class="form-control input-lg"
+										id="txt-search"
+										placeholder=""
+									/>
+									<button type="button" onclick="search()">Search</button>
+									</div>
+								<div id="filter-records"></div>
+								</div>
+
+								<footer>
+									<div id="maxResultsDiv">
+										<p id="resultsNum"></p>
+										<label for="maxResults">Max # of results:</label>
+										<select name="maxResults" id="maxResults">
+										  <option value="500">500</option>
+										  <option value="1000">1000</option>
+										  <option value="1500">1500</option>
+										  <option value="2000">2000</option>
+										</select>
+									  </div>
+									  <div id="footerButtons">
+										<button id="saveChanges" onclick="generateTxtFile()">
+										  Save change list
+										</button>
+										<button id="darkModeButton" onclick="darkMode()">
+										  Toggle dark mode
+										</button>
+									  </div>
+								</footer>
+								<br>
+									
+							</article>
+							<div style="position:relative; z-index:100">
+							<button id="loadMore" style="width:100%" onclick="loadMore()">LoadMore</button>
+							</div>
+					</div>
+
+				<!-- Footer -->
+					<section id="footer">
+
+						<p class="copyright">Contact me at Colourofloosemetal@gmail.com</p>
+					</section>
+
+			</div>
+
+		<!-- Scripts -->
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+	<style>
+		/* @import url("https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Raleway:400,800,900"); */
+	
+		/*
+	  A modified version of
+		Future Imperfect by HTML5 UP
+		html5up.net | @ajlkn
+		Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+	*/
+	
+		/* Reset */
+	
+		.dark-mode {
+		  background-color: #121212 !important;
+		  color: #9a3464 !important;
+		}
+		/* .post *{
+			float:center !important;
+		} */
+
+		#editInput {
+		  position: relative;
+		  z-index: 10;
+		}
+		footer {
+		  position: fixed;
+		  left: 0;
+		  bottom: 0;
+		  width: 100%;
+		}
+		#footerButtons {
+		  position: absolute;
+		  display: grid;
+		  left: 0;
+		  bottom: 0;
+		}
+		#contribCheckBox {
+		  position: fixed;
+		  display: grid;
+		  right: 5%;
+		  top: 10%;
+		}
+		#maxResultsDiv {
+		  display: grid;
+		  float: right;
+		}
+		#resultsNum {
+		  float: right;
+		}
+		#saveChanges {
+		  float: left;
+		  display: none;
+		  margin-bottom: 10px;
+		}
+		#loading {
+		  position: fixed;
+		  z-index: 999;
+		  height: 2em;
+		  width: 2em;
+		  overflow: show;
+		  margin: auto;
+		  top: 0;
+		  left: 0;
+		  bottom: 0;
+		  right: 0;
+		  font-size: 3em;
+		}
+		.dark-mode *:not(input, #maxResultsDiv) {
+		  color: white;
+		}
+		</style>
+		<!-- <script>
+
+			
+		</script> -->
+		 <script>
+			//add a listener to the search options so any time they are updated the
+			//search will run and be "refreshed"
+		
+			window.onscroll = function (ev) {
+			  if (window.innerHeight + window.scrollY >= document.body.offsetHeight) {
+				loadMore();
+			  }
+			};
+			function loadMore(){
+				if (outputContentIndex != outputContent.length) {
+				  if (outputContent.length - 1 > outputContentIndex + 10) {
+					$("#filter-records").html(
+					  outputContent.slice(0, outputContentIndex + 10)
+					);
+					outputContentIndex += 10;
+				  } else {
+					$("#filter-records").html(
+					  outputContent.slice(0, outputContent.length)
+					);
+					outputContentIndex = outputContent.length;
+				  }
+				}
+			}
+		
+			
+		
+			window.addEventListener("load", function () {
+			  var input = document.getElementById("txt-search");
+			  input.addEventListener("keyup", function (event) {
+				  //if the enter key is pressed, dont submit the form
+				if (event.keyCode === 13) {
+				  event.preventDefault();
+				  search();
+				  //so the issue is the soft keyboard doesnt go down on mobile when you search, so to make it do that, we check if on mobile, then add a text field, focus on it to drop the keyboard and focus off the
+				  //search bar, then hide it and remove it, kinda weird lol
+				
+				  if( /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ) {
+				  var field = document.createElement('input');
+				field.setAttribute('type', 'text');
+				document.body.prepend(field);
+				setTimeout(function() {
+						field.focus();
+						setTimeout(function() {
+							field.setAttribute('style', 'display:none;');
+							field.remove();
+						}, 50);
+					}, 50);
+				}
+			}
+			  });
+			  //display "loading page" text until the enormous ammount of json data is loaded along with everything else
+			  document.getElementById("loading").style.display = "none";
+			  console.log("loaded")
+			});
+		
+			//initialize contribMode variable and changeList which stores text corrections for the images that can be made in contrib mode
+			var contribMode = $("#contrib").is(":checked");
+			var changeList = [];
+			//run the search whenever anything is typed in the search box
+			//$("#txt-search").keyup(function () {
+			//  search();
+			//});
+		
+			//function to escape characters in string that would act as regex special characters
+			function escapeRegExp(string) {
+			  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			}
+
+
+			//combine arrays
+			smMapData.forEach(function (obj) {
+				obj.dir = "sm";
+			});
+			dbMapData.forEach(function (obj) {
+				obj.dir = "db";
+			});
+			jojoMapData.forEach(function (obj) {
+				obj.dir = "jojo";
+			});
+			dbzMapData.forEach(function (obj) {
+				obj.dir = "dbz";
+			});
+			dbzMovMapData.forEach(function (obj) {
+				obj.dir = "dbzMov";
+			});
+			recessMapData.forEach(function (obj) {
+				obj.dir = "recess";
+			});
+			cw2003MapData.forEach(function (obj) {
+				obj.dir = "cw2003";
+			});
+			swPrequelsMapData.forEach(function (obj) {
+				obj.dir = "swPrequel";
+			});
+			ltMapData.forEach(function (obj) {
+				obj.dir = "looneyTunes";
+			});
+			ghibliMapData.forEach(function (obj) {
+				obj.dir = "ghibli";
+			});
+			ghibliMapData.forEach(function (obj) {
+				obj.dir = "ghibli";
+			});
+			jBravoMapData.forEach(function (obj) {
+				obj.dir = "JohnnyBravo";
+			});
+			disPixMapData.forEach(function (obj) {
+				obj.dir = "DisPix";
+			});
+			var count = 0;
+			var outputContent = [];
+			var outputContentIndex = 0;
+
+
+			//the glorious search function
+			function search() {
+			  outputContentIndex = 0;
+			  count = 0;
+			  outputContent = [];
+			  resultLimit = $("#maxResults option:selected").val();
+			  contribMode = $("#contrib").is(":checked");
+			  var searchField = $("#txt-search").val();
+			  if (searchField === "") {
+				$("#filter-records").html("");
+				return;
+			  }
+			  //if we are using advanced search (fuse)
+			//   if (document.getElementById("advancedSearch").checked){
+			// 	//console.log(searchField)
+			// 	mapsToUse = [];
+			// 	if (document.getElementById("sailorMoon").checked){
+			// 		mapsToUse = mapsToUse.concat(smMapData);
+			// 	}
+			// 	if (document.getElementById("dragonBall").checked){
+			// 		mapsToUse = mapsToUse.concat(dbMapData);
+			// 	}
+			// 	if (document.getElementById("jojo").checked){
+			// 		mapsToUse = mapsToUse.concat(jojoMapData);
+			// 	}
+			// 	if (document.getElementById("dbz").checked){
+			// 		mapsToUse = mapsToUse.concat(dbzMapData);
+			// 	}
+			// 	if (document.getElementById("dbzMov").checked){
+			// 		mapsToUse = mapsToUse.concat(dbzMovMapData);
+			// 	}
+			// 	if (document.getElementById("recess").checked){
+			// 		mapsToUse = mapsToUse.concat(recessMapData);
+			// 	}
+			// 	if (document.getElementById("cw2003").checked){
+			// 		mapsToUse = mapsToUse.concat(cw2003MapData);
+			// 	}
+			// 	if (document.getElementById("swPrequels").checked){
+			// 		mapsToUse = mapsToUse.concat(swPrequelsMapData);
+			// 	}
+			// 	if (document.getElementById("looneyTunes").checked){
+			// 		mapsToUse = mapsToUse.concat(ltMapData);
+			// 	}
+			// 	if (document.getElementById("ghibli").checked){
+			// 		mapsToUse = mapsToUse.concat(ghibliMapData);
+			// 	}
+			// 	if (document.getElementById("disPix").checked){
+			// 		mapsToUse = mapsToUse.concat(disPixMapData);
+			// 	}
+			// 	if (document.getElementById("JohnnyBravo").checked){
+			// 		mapsToUse = mapsToUse.concat(jBravoMapData);
+			// 	}
+			// 	advResult = []
+			// 	advResult = fuse.search(searchField);
+			// 	for (index = 0; index < advResult.length; ++index) {
+			// 		// console.log(advResult[index])
+			// 		advSearchProcessResult(advResult[index].item)
+			// 		if (index + 1 >= resultLimit){
+			// 			break;
+			// 		}
+			// 	}
+			//   }
+
+			$("#resultsNum").text(count + " results");
+			if (outputContent.length < 20) {
+				outputContentIndex = outputContent.length - 1;
+			} else {
+					outputContentIndex = 20;				}
+			
+			$("#filter-records").html(outputContent.slice(0, outputContentIndex));
+			// console.log("done");
+				
+			}
+			//subfunction for running the advanced search with fuse, this just adds the html output to results so yeah
+			function advSearchProcessResult(resultObj){
+				var output = "";
+				  output += '<div class="col-md-6 well">';
+				  output +=
+					'<div class="col-md-3"><img class="img-responsive" id="'+resultObj["dir"] + resultObj["num"]+'" object-fit: contain" src="' +
+					"http://colourofloosemetal.com/assets/"+resultObj["dir"]+"/" +
+					resultObj["num"] +
+					".jpg" +
+					'" alt="' +
+					resultObj["text"] +
+					'" /></div>' +
+					'<button  id="' +
+					resultObj["dir"] + resultObj["num"] +
+					'" class="leftBtn">←</button>'+
+					'<button  id="' +
+					 resultObj["dir"] + resultObj["num"] +
+					 '" class="rightBtn">→</button></div>';
+					
+				  	output += '<div class="col-md-7">';
+
+					output += "<h4>" + resultObj["text"]+ "</h4>";
+					output +=  "<p>" + resultObj["num"] + "</p>";
+
+		
+				  //output += "<h2>" + resultObj["num"] + "</h2>";
+				  output += "<h5>" + resultObj["timeStamp"] + "</h5>";
+				  score = (1 - resultObj.score) * 100
+				  output += "<h5>Score:"+score.toFixed(2)+"</h5>";
+				  //if the result is a sailor moon one then we will add tags
+
+				  //same thing for recess
+
+				  //same thing for smCT
+
+				  output += "<p><br></p>";
+				  output += "</div>";
+				  output += "</div>";
+				  //console.log(val);
+				  //this could be modified to have multiple results per row
+				//   if (count % 1 == 0) {
+					output += '</div><div class="row">';
+				//   }
+				  count++;
+				  outputContent.push(output);
+			}
+
+
+
+			//function to display a brief message that disappears after a durration
+			function tempAlert(msg, duration) {
+			  var el = document.createElement("div");
+			  el.setAttribute(
+				"style",
+				"font-size:2em;position:fixed;top:50%;left:70%;"
+			  );
+			  el.innerHTML = msg;
+			  setTimeout(function () {
+				el.parentNode.removeChild(el);
+			  }, duration);
+			  document.body.appendChild(el);
+			}
+
+
+			//create event for all the dynamically generated buttons to scroll through images
+			$(document.body).on("click", ".rightBtn", function (event) {
+			  //get the id of the button which is the dir and the image number and also the id of the image
+			  var imgId = $(this).attr("id");
+			  //console.log(imgId);
+			  //console.log(document.getElementById(imgId).getAttribute('src'));
+			  imgScr = document.getElementById(imgId).getAttribute('src');
+			  imgScr = imgScr.split("/");
+			  imgPrePath = imgScr.slice(0, -1)
+			  imgPrePath = imgPrePath.join('/');
+			  //console.log(imgPrePath);
+			  imgIndx = imgScr[imgScr.length - 1];
+			  //console.log(imgIndx);
+			  imgIndx = imgIndx.substr(0, imgIndx.length - 4);
+			  //console.log(imgIndx);
+			  imgIndx = parseInt(imgIndx) + 1;
+			  //console.log(imgIndx);
+			  //console.log(imgIndx.toString());
+			  $('img#'+imgId).attr('src', imgPrePath + '/' + imgIndx + '.jpg');
+			  //console.log();
+			});
+
+			$(document.body).on("click", ".leftBtn", function (event) {
+				//get the id of the button which is the dir and the image number and also the id of the image
+				var imgId = $(this).attr("id");
+				//console.log(imgId);
+				//console.log(document.getElementById(imgId).getAttribute('src'));
+				imgScr = document.getElementById(imgId).getAttribute('src');
+				imgScr = imgScr.split("/");
+				imgPrePath = imgScr.slice(0, -1)
+				imgPrePath = imgPrePath.join('/');
+				//console.log(imgPrePath);
+				imgIndx = imgScr[imgScr.length - 1];
+				//console.log(imgIndx);
+				imgIndx = imgIndx.substr(0, imgIndx.length - 4);
+				//console.log(imgIndx);
+				imgIndx = parseInt(imgIndx) - 1;
+				//console.log(imgIndx);
+				//console.log(imgIndx.toString());
+				$('img#'+imgId).attr('src', imgPrePath + '/' + imgIndx + '.jpg');
+				//console.log();
+			  });
+			  
+
+		  </script>
+		  <script>
+		</script>
+
+
+</html>

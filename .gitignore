@@ -5,3 +5,4 @@
 *.BLB
 *.br
 *.exe
+/showMapData
