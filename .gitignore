@@ -6,3 +6,4 @@
 *.br
 *.exe
 /showMapData
+/generatedwasm

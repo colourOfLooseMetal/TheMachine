@@ -16,18 +16,18 @@ text = []
 def remove_non_ascii_2(text):
     return re.sub(r'[^\x00-\x7F]',' ', text)
 
-with open('./machineTestText.json') as json_file:
+with open('./machineTextTextCombined.json') as json_file:
     data = json.load(json_file)
 
     # Print the type of data variable
     print("Type:", type(data))
 
     # Print the data of dictionary
-for dict in data:
-    text.append(remove_non_ascii_2(dict["text"]).lower().replace("  ", " ").replace("\n", " "))
+for textLine in data:
+    text.append(remove_non_ascii_2(textLine).lower().replace("  ", " ").replace("\n", " "))
 
 print(len(text))
-input()
+input() #365697
 
 allLetters = list(string.ascii_lowercase)#set(("a","b"))
 allLetters.append(" ")
