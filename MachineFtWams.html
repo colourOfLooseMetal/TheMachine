@@ -8,7 +8,7 @@
 
 <head>
 	<script src="test.js"></script>
-	<title>sailorMood</title>
+	<title>The Machine</title>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 
@@ -17,58 +17,47 @@
 
 	<script>
 		//when a search option is checked all other search options are unchecked
-		function advancedSearchCheck() {
-			if (document.getElementById("advancedSearch").checked) {
-				//console.log("checked")
-				document.getElementById("tag").checked = false;
-				document.getElementById("episode").checked = false;
-			}
-		}
-		function episodeCheck() {
-			if (document.getElementById("episode").checked) {
-				//console.log("checked")
-				document.getElementById("tag").checked = false;
-				document.getElementById("advancedSearch").checked = false;
-			}
-		}
-		function tagCheck() {
-			if (document.getElementById("tag").checked) {
-				//console.log("checked")
-				document.getElementById("advancedSearch").checked = false;
-				document.getElementById("episode").checked = false;
-			}
-		}
+		// function advancedSearchCheck() {
+		// 	if (document.getElementById("advancedSearch").checked) {
+		// 		//console.log("checked")
+		// 		document.getElementById("tag").checked = false;
+		// 		document.getElementById("episode").checked = false;
+		// 	}
+		// }
+		// function episodeCheck() {
+		// 	if (document.getElementById("episode").checked) {
+		// 		//console.log("checked")
+		// 		document.getElementById("tag").checked = false;
+		// 		document.getElementById("advancedSearch").checked = false;
+		// 	}
+		// }
+		// function tagCheck() {
+		// 	if (document.getElementById("tag").checked) {
+		// 		//console.log("checked")
+		// 		document.getElementById("advancedSearch").checked = false;
+		// 		document.getElementById("episode").checked = false;
+		// 	}
+		// }
 		//select or deselect all show options when buttton pressed, excludes search option checkboxes
-		function selectAll() {
-			x = document.getElementsByClassName("custom-control-input"); // Check
-			for (i = 0; i < x.length; i++) {
-				if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch') {
-					x[i].checked = true;
-				}
-			}
-		}
-		function deselectAll() {
-			x = document.getElementsByClassName("custom-control-input"); // Check
-			for (i = 0; i < x.length; i++) {
-				if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch') {
-					x[i].checked = false;
-				}
-			}
-		}
+		// function selectAll() {
+		// 	x = document.getElementsByClassName("custom-control-input"); // Check
+		// 	for (i = 0; i < x.length; i++) {
+		// 		if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch') {
+		// 			x[i].checked = true;
+		// 		}
+		// 	}
+		// }
+		// function deselectAll() {
+		// 	x = document.getElementsByClassName("custom-control-input"); // Check
+		// 	for (i = 0; i < x.length; i++) {
+		// 		if (x[i].id != 'tag' && x[i].id != 'episode' && x[i].id != 'advancedSearch') {
+		// 			x[i].checked = false;
+		// 		}
+		// 	}
+		// }
 		function darkMode() {
 			$("body").toggleClass("dark-mode");
 			$("body *").toggleClass("dark-mode");
-		}
-		function generateTxtFile() {
-			var changesString = ""
-			//iterate through saved user chanegs and save each one to a string in a way that will be easy to read in python
-			for (var i = 0; i < changeList.length; i++) {
-				changesString += changeList[i][0] + "," + changeList[i][1] + "\n"
-			}
-			//send the string to the download function and clear the changelist
-			download("changes.txt", changesString)
-			alert("thank you so much for helping (✿◠‿◠) please email the text file that was just downloaded to colourofloosemetal@gmail.com and I will make the updates as soon as possible");
-			changeList = [];
 		}
 		//download the changes as a txt file
 		function download(filename, text) {
@@ -3861,7 +3850,7 @@
 			<!-- Links -->
 			<section>
 				<ul class="links">
-					<li>
+					<!-- <li>
 						<h3>Search options for advanced search</h3>
 						<p>*important* White space acts as an AND operator, while a single pipe (|) character acts as an
 							OR operator. To escape white space, use double quote ex. ="scheme language" for exact match.
@@ -3918,8 +3907,8 @@
 							</tbody>
 						</table>
 
-					</li>
-					<div class="custom-control custom-checkbox">
+					</li> -->
+					<!-- <div class="custom-control custom-checkbox">
 						<input type="checkbox" class="custom-control-input" id="sailorMoon" checked>
 						<label class="custom-control-label" for="sailorMoon">sailorMoon</label>
 					</div>
@@ -3966,10 +3955,10 @@
 					<div class="custom-control custom-checkbox">
 						<input type="checkbox" class="custom-control-input" id="disPix" checked>
 						<label class="custom-control-label" for="disPix">Disney Pixar</label>
-					</div>
+					</div> -->
 				</ul>
-				<button onclick="selectAll()">Select All</button>
-				<button onclick="deselectAll()">Deselect All</button>
+				<!-- <button onclick="selectAll()">Select All</button>
+				<button onclick="deselectAll()">Deselect All</button> -->
 			</section>
 
 		</section>
@@ -3982,14 +3971,14 @@
 				<header>
 					<div class="title">
 						<h2><a href="#">The Machine</a></h2>
-						<p>do not distribtue pls lol</p>
+						<p>ft. WAMS <small>(web assembly machine searcher)</small></p>
 					</div>
 
 				</header>
 
-				<h5>Search Options</h5>
+				<!-- <h5>Search Options</h5> -->
 				<div class="row" id="checkboxes">
-					<div class="custom-control custom-checkbox">
+					<!-- <div class="custom-control custom-checkbox">
 						<input type="checkbox" class="custom-control-input" id="tag" onclick="tagCheck()" unchecked>
 						<label class="custom-control-label" for="tag">tagSearch</label>
 					</div>
@@ -4002,7 +3991,7 @@
 						<input type="checkbox" class="custom-control-input" id="advancedSearch"
 							onclick="advancedSearchCheck()" checked>
 						<label class="custom-control-label" for="advancedSearch">advanced text search</label>
-					</div>
+					</div> -->
 
 					<!-- <label><input type="checkbox" id="text" checked /> text</label>
 									<label><input type="checkbox" id="episode" unchecked /> episode number</label>
@@ -4018,7 +4007,7 @@
 		</div>
 
 		<footer>
-			<div id="maxResultsDiv">
+			<!-- <div id="maxResultsDiv">
 				<p id="resultsNum"></p>
 				<label for="maxResults">Max # of results:</label>
 				<select name="maxResults" id="maxResults">
@@ -4027,11 +4016,11 @@
 					<option value="1500">1500</option>
 					<option value="2000">2000</option>
 				</select>
-			</div>
+			</div> -->
 			<div id="footerButtons">
-				<button id="saveChanges" onclick="generateTxtFile()">
+				<!-- <button id="saveChanges" onclick="generateTxtFile()">
 					Save change list
-				</button>
+				</button> -->
 				<button id="darkModeButton" onclick="darkMode()">
 					Toggle dark mode
 				</button>
@@ -4177,9 +4166,26 @@
 
 	function egg(jsonString) {
 		// console.log(jsonString.slice(599, 620));
-		egggggg = JSON.parse(jsonString);
-		console.log(egggggg);
-		$("#filter-records").html(egggggg);
+		advResult = JSON.parse(jsonString);
+		// console.log(egggggg);
+		// $("#filter-records").html(egggggg);
+			for (index = 0; index < advResult.length; index+= 2) {
+				// console.log(advResult[index])
+				advSearchProcessResult(advResult.slice(index, index+2))
+				// if (index + 1 >= resultLimit){
+				// 	break;
+				// }
+			}
+			$("#filter-records").html("");
+		$("#resultsNum").text(count + " results");
+		if (outputContent.length < 20) {
+			outputContentIndex = outputContent.length - 1;
+		} else {
+			outputContentIndex = 20;
+		}
+
+		$("#filter-records").html(outputContent.slice(0, outputContentIndex));
+		// console.log("done");
 	}
 	var wamsSearch = cwrap('search', 'string', ['string']);
 	console.log("ayy we out and not in yet");
@@ -4249,105 +4255,107 @@
 		outputContentIndex = 0;
 		count = 0;
 		outputContent = [];
-		resultLimit = $("#maxResults option:selected").val();
-		contribMode = $("#contrib").is(":checked");
+		$("#filter-records").html("searching");
+		// resultLimit = $("#maxResults option:selected").val();
+		// contribMode = $("#contrib").is(":checked");
 		var searchField = $("#txt-search").val();
 		if (searchField === "") {
 			$("#filter-records").html("");
 			return;
 		}
-		wamsSearch("hello");
-		//if we are using advanced search (fuse)
-		//   if (document.getElementById("advancedSearch").checked){
-		// 	//console.log(searchField)
-		// 	mapsToUse = [];
-		// 	if (document.getElementById("sailorMoon").checked){
-		// 		mapsToUse = mapsToUse.concat(smMapData);
-		// 	}
-		// 	if (document.getElementById("dragonBall").checked){
-		// 		mapsToUse = mapsToUse.concat(dbMapData);
-		// 	}
-		// 	if (document.getElementById("jojo").checked){
-		// 		mapsToUse = mapsToUse.concat(jojoMapData);
-		// 	}
-		// 	if (document.getElementById("dbz").checked){
-		// 		mapsToUse = mapsToUse.concat(dbzMapData);
-		// 	}
-		// 	if (document.getElementById("dbzMov").checked){
-		// 		mapsToUse = mapsToUse.concat(dbzMovMapData);
-		// 	}
-		// 	if (document.getElementById("recess").checked){
-		// 		mapsToUse = mapsToUse.concat(recessMapData);
-		// 	}
-		// 	if (document.getElementById("cw2003").checked){
-		// 		mapsToUse = mapsToUse.concat(cw2003MapData);
-		// 	}
-		// 	if (document.getElementById("swPrequels").checked){
-		// 		mapsToUse = mapsToUse.concat(swPrequelsMapData);
-		// 	}
-		// 	if (document.getElementById("looneyTunes").checked){
-		// 		mapsToUse = mapsToUse.concat(ltMapData);
-		// 	}
-		// 	if (document.getElementById("ghibli").checked){
-		// 		mapsToUse = mapsToUse.concat(ghibliMapData);
-		// 	}
-		// 	if (document.getElementById("disPix").checked){
-		// 		mapsToUse = mapsToUse.concat(disPixMapData);
-		// 	}
-		// 	if (document.getElementById("JohnnyBravo").checked){
-		// 		mapsToUse = mapsToUse.concat(jBravoMapData);
-		// 	}
-		// 	advResult = []
-		// 	advResult = fuse.search(searchField);
-		// 	for (index = 0; index < advResult.length; ++index) {
-		// 		// console.log(advResult[index])
-		// 		advSearchProcessResult(advResult[index].item)
-		// 		if (index + 1 >= resultLimit){
-		// 			break;
-		// 		}
-		// 	}
-		//   }
+		//wams search will then call egg when done to process results
+		wamsSearch(searchField);
 
-		$("#resultsNum").text(count + " results");
-		if (outputContent.length < 20) {
-			outputContentIndex = outputContent.length - 1;
-		} else {
-			outputContentIndex = 20;
+		
+
+
+
+	}
+	function get_dir_and_index_from_biglistnum(blNum){
+		//convert something like 34323 to sm 34323 and same for others
+		dir = "";
+		num = blNum;
+		if(blNum >= 0 && blNum < 60941){
+			dir = "sm";
 		}
-
-		$("#filter-records").html(outputContent.slice(0, outputContentIndex));
-		// console.log("done");
+		else if(blNum >= 60941 && blNum < 61838){
+			dir = "cw2003";
+			num = num - 60941;
+		}
+		else if(blNum >= 61838 && blNum < 65820){
+			dir = "swPrequel";
+			num = num - 61838;
+		}
+		else if(blNum >= 65820 && blNum < 98080){
+			dir = "recess";
+			num = num - 65820;
+		}
+		else if(blNum >= 98080 && blNum < 142918){
+			dir = "DisPix";
+			num = num - 98080;
+		}												
+		else if(blNum >= 142918 && blNum < 167909){
+			dir = "JohnnyBravo";
+			num = num - 142918;
+		}
+		else if(blNum >= 167909 && blNum < 194672){
+			dir = "ghibli";
+			num = num - 167909;
+		}
+		else if(blNum >= 194672 && blNum < 214152){
+			dir = "looneyTunes";
+			num = num - 194672;
+		}
+		else if(blNum >= 214152 && blNum < 245632){
+			dir = "db";
+			num = num - 214152;
+		}
+		else if(blNum >= 245632 && blNum < 305584){
+			dir = "dbz";
+			num = num - 245632;
+		}
+		else if(blNum >= 305584 && blNum < 314267){
+			dir = "dbzMov";
+			num = num - 305584;
+		}
+		else if(blNum >= 314267 && blNum <= 365697){
+			dir = "jojo";
+			num = num - 314267;
+		}
+		return([dir,num]);
 
 	}
 	//subfunction for running the advanced search with fuse, this just adds the html output to results so yeah
 	function advSearchProcessResult(resultObj) {
+		//result object is [text, biglistnum]
+		dirNnum = get_dir_and_index_from_biglistnum(resultObj[1])
 		var output = "";
 		output += '<div class="col-md-6 well">';
 		output +=
-			'<div class="col-md-3"><img class="img-responsive" id="' + resultObj["dir"] + resultObj["num"] + '" object-fit: contain" src="' +
-			"http://colourofloosemetal.com/assets/" + resultObj["dir"] + "/" +
-			resultObj["num"] +
+			'<div class="col-md-3"><img class="img-responsive" id="' + dirNnum[0] + dirNnum[1] + '" object-fit: contain" src="' +
+			"http://colourofloosemetal.com/assets/" + dirNnum[0] + "/" +
+			dirNnum[1] +
 			".jpg" +
 			'" alt="' +
-			resultObj["text"] +
+			resultObj[0] +
 			'" /></div>' +
 			'<button  id="' +
-			resultObj["dir"] + resultObj["num"] +
+			dirNnum[0] + dirNnum[1] +
 			'" class="leftBtn">←</button>' +
 			'<button  id="' +
-			resultObj["dir"] + resultObj["num"] +
+			dirNnum[0] + dirNnum[1] +
 			'" class="rightBtn">→</button></div>';
 
 		output += '<div class="col-md-7">';
 
-		output += "<h4>" + resultObj["text"] + "</h4>";
-		output += "<p>" + resultObj["num"] + "</p>";
+		output += "<h4>" + resultObj[0] + "</h4>";
+		output += "<p>" + dirNnum[1] + "</p>";
 
 
 		//output += "<h2>" + resultObj["num"] + "</h2>";
-		output += "<h5>" + resultObj["timeStamp"] + "</h5>";
-		score = (1 - resultObj.score) * 100
-		output += "<h5>Score:" + score.toFixed(2) + "</h5>";
+		// output += "<h5>" + resultObj["timeStamp"] + "</h5>";
+		// score = (1 - resultObj.score) * 100
+		// output += "<h5>Score:" + score.toFixed(2) + "</h5>";
 		//if the result is a sailor moon one then we will add tags
 
 		//same thing for recess

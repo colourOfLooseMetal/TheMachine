@@ -489,13 +489,13 @@ void cppSearch(std::string query)
 	// 		std::cout << mapTextData[i] << std::endl;
 	// 	}
 	// }
-	std::cout << "eggstuff1"
-			  << "\n";
+	// std::cout << "eggstuff1"
+	// 		  << "\n";
 	// std::string query = "hello";
 	// vector<std::string> mapTextData = {"ayy hello there", "yeah hell of a", "helloasdaw", "hell. what a place", "hzello", "zhello", "helleo", "helol", "lehlo", "hello", "zhello", "helloz", "hellzowww", "hzellowww", "zzellowww", " hello "};
-	std::cout << "eggstuffqedqwdwqd"
-			  << "\n";
-	std::cout << mapTextData[0] << "\n";
+	// std::cout << "eggstuffqedqwdwqd"
+	// 		  << "\n";
+	std::cout << query << "\n";
 	// cout<< sizeof(mapTextData) << " ";
 	// cout<< sizeof(mapTextData[0]) << " ";
 	// int loc = SearchString("The quick brown fox jumps over the lazy dog hello", "fox");
@@ -516,7 +516,7 @@ void cppSearch(std::string query)
 	
 
 	std::cout << sizeof(matchIndex[0])*matchIndex.size() << "\n";
-	std::cout << "shawtyInt " << matchIndex[0] << matchIndex[1000000-1] << "\n";
+	// std::cout << "shawtyInt " << matchIndex[0] << matchIndex[1000000-1] << "\n";
 
 	int queryLen = query.length();
 	// for leshacejkven search
@@ -649,14 +649,14 @@ char* Scores::to_json() {
 extern "C" void search(char * query) {
   cppSearch(query);
   Scores Scores;
-  for (int i = 0; i < 200; i++)
+  for (int i = 0; i < 450; i++)
 	{
 		Scores.add_Score(mapTextData[sortedIndices[i]], sortedIndices[i]);
 	}
   char* json = Scores.to_json();
 
     EM_ASM({
-    console.log(UTF8ToString($0));
+    // console.log(UTF8ToString($0));
     egg(UTF8ToString($0));
     // e.data = UTF8ToString($0);
 }, json);
@@ -678,18 +678,18 @@ int main()
 	{
 		scoresArr[i] = 0.0;
 	}
-	int egg = 0;
-	std::cout << mapTextData[0] << "\n";
-	std::cout << "eggStart"
-			  << "\n";
-	start = high_resolution_clock::now();
-	cppSearch("hello");
-	// search();
+	// int egg = 0;
+	// std::cout << mapTextData[0] << "\n";
+	// std::cout << "eggStart"
+	// 		  << "\n";
+	// start = high_resolution_clock::now();
+	// // cppSearch("hello");
+	// // search();
 
-	auto end = high_resolution_clock::now();
-	duration<double, std::milli> diff = end - start; //
-	std::cout << diff.count() << " ms"
-			  << "\n";
+	// auto end = high_resolution_clock::now();
+	// duration<double, std::milli> diff = end - start; //
+	// std::cout << diff.count() << " ms"
+	// 		  << "\n";
 
 	// std::cout << sample_map[1] << " " << sample_map[2] << std::endl;
 
