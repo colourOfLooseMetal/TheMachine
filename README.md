@@ -2,6 +2,7 @@
   web assembly machine searcher, a fuzzy string search method created specifically for searching the machine\
   uses a combination of fuzzy bitap to filter and kinda uses a sliding window jaro/ngram method to score, and scores based on match index,\
   but like c++ is hard and im tired so instead of explaining the scoring method take a look at the scores for the search term "hello"\
+\for searching the list ["hello", "helloz","helloasdaw","zhello"," hello ", "ayy hello there", "yeah hell of a", "helleo", "hellzowww", "hzello", "hzellowww"]
 \
 \the scoring has changed a little but these results would appear in the same order as they do here
 \
