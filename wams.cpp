@@ -9,7 +9,7 @@
 #include <iostream>
 // using namespace std;
 #include <limits.h>
-// #include "data.h"
+#include "data.h"
 #include <string>
 // #include <cmath>
 #include <algorithm>
@@ -21,25 +21,38 @@
 #include <chrono>
 #include <cctype>
 #include <bitset>
-// #include <emscripten.h>
+
+#include <emscripten.h>
 #include <cstring>
+
+#include <sstream>
+#include <iomanip>
+
 using namespace std::chrono;
 const bool cLog = false; // console.log
-// const int searchTextLen = 33;
 
-// std::string mapTextData[searchTextLen]
-const int searchTextLen = 365697;
-double scores[searchTextLen];
-// const char**  com = new const char*
-// char *mapTextData[searchTextLen] = 
-// std::string mapTextData[mapTextData];
-std::vector<std::string> mapTextData(searchTextLen);
-// vector<double> myVect(120000000, 0);
-// std::string * mapTextData = new std::string[searchTextLen] {"xxxxhelloxx", "xxxhelloxx", "xxhelloxx", "xhelloxx", "xxxxhelloxx", "xxxxhellox", "xxxhellox", "xxhellox", "xhellox", "xxxxhellox", "xxxhello", "xxhello", "xhello", "hello", "hzello", "ayy hello there", "yeah hell of a", "helloasdaw", "hell. what a place", "hzello", "zhello", "helleo", "helol", "lehlo", "hello", "zhello", "helloz", "hellzowww", "hzellowww", "zzellowww", " hello "};
-// static const char * const mapTextData[searchTextLen] = 
-//char * mapTextData = new char[searchTextLen]
+// const int searchTextLen = 365697;
+double scoresArr[searchTextLen];
+std::vector<int> sortedIndices(searchTextLen);
 
-// void hashSortIndices(double values[], int n, int sortedIndices[])
+auto start = high_resolution_clock::now();
+
+
+
+
+std::string escape_json(const std::string &s) {
+    std::ostringstream o;
+    for (auto c = s.cbegin(); c != s.cend(); c++) {
+        if (*c == '"' || *c == '\\' || ('\x00' <= *c && *c <= '\x1f')) {
+            o << "\\u"
+              << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(*c);
+        } else {
+            o << *c;
+        }
+    }
+    return o.str();
+}
+
 void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 {
 	// 1. Create an empty hash table.
@@ -320,10 +333,10 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 	return (score);
 }
 
-double jaro_sliding_window(const std::string string, const std::string pattern, const int max_distance, int matchIndex)
+double jaro_sliding_window(const std::string string, const int strLen, const std::string pattern, const int patLen, const int max_distance, int matchIndex)
 {
 
-	const int strLen = string.length(), patLen = pattern.length();
+	// const int strLen = string.length();
 	// std::cout << "\n" << "\n" << ":" << pattern << ":" <<  "  main " << ":" << string << ":" << "\n";
 	// int w;
 	// w = getc(stdin);
@@ -467,18 +480,18 @@ static short int SearchStringFuzzy(std::string text, std::string pattern, int k)
 // casual mil nbd, we only need like 200k right now tho, but soon...
 std::bitset<1000000> bitSetOfMatches;
 
-void cppSearch()
+void cppSearch(std::string query)
 {
-		std::cout << "in a function" << std::endl;
-	for (int i = 0; i < searchTextLen; i++)
-	{
-		if(i%1000 == 0){
-			std::cout << mapTextData[i] << std::endl;
-		}
-	}
+	// 	std::cout << "in a function" << std::endl;
+	// for (int i = 0; i < searchTextLen; i++)
+	// {
+	// 	if(i%1000 == 0){
+	// 		std::cout << mapTextData[i] << std::endl;
+	// 	}
+	// }
 	std::cout << "eggstuff1"
 			  << "\n";
-	std::string query = "hello";
+	// std::string query = "hello";
 	// vector<std::string> mapTextData = {"ayy hello there", "yeah hell of a", "helloasdaw", "hell. what a place", "hzello", "zhello", "helleo", "helol", "lehlo", "hello", "zhello", "helloz", "hellzowww", "hzellowww", "zzellowww", " hello "};
 	std::cout << "eggstuffqedqwdwqd"
 			  << "\n";
@@ -499,15 +512,9 @@ void cppSearch()
 	std::vector<short int> matchIndex;
 	matchIndex.resize(1000000);
 	std::fill(matchIndex.begin(), matchIndex.end(), 0);
-	// std::vector<double> scores;
-	// scores.resize(1000000);
-	// std::fill(scores.begin(), scores.end(), 0.0);
 
 	
-	for (int i = 0; i < len; i++)
-	{
-		scores[i] = 0.0;
-	}
+
 	std::cout << sizeof(matchIndex[0])*matchIndex.size() << "\n";
 	std::cout << "shawtyInt " << matchIndex[0] << matchIndex[1000000-1] << "\n";
 
@@ -541,7 +548,7 @@ void cppSearch()
 		if (bitSetOfMatches[i] == 1)
 		{
 			// std::cout << mapTextData[i] << "\n";
-			double score = jaro_sliding_window(mapTextData[i], query, 2, matchIndex[i]); // 323ms"hello"
+			double score = jaro_sliding_window(mapTextData[i], eachTextLen[i], query, queryLen, 2, matchIndex[i]); // 323ms"hello"
 			// score cutoff thresh, otherwise will just be 0
 			//  if (score > 0.5) the initial filtering kinda does this already in it's own way
 			{
@@ -552,7 +559,7 @@ void cppSearch()
 				// int mIndxModified = (matchIndex[i] >> 1) + (matchIndex[i] & 1);
 				// std::cout << "\n mindxModified" << mIndxModified << "\n";
 				double scoreWithIndex = score - matchIndex[i] * .002;
-				int resSize = mapTextData[i].length();//strlen(mapTextData[i]);//strlen for char array mapTextData[i].length(); for string
+				int resSize = eachTextLen[i];//strlen(mapTextData[i]);//strlen(mapTextData[i]);//strlen for char array mapTextData[i].length(); for string
 				int lengthDiff = abs(resSize - queryLen);
 				// int lenDiffModified = (lengthDiff >> 1) + (lengthDiff & 1);
 				double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
@@ -561,148 +568,140 @@ void cppSearch()
 				// std::cout << "initial fuzzy Score:         " << score << "\n";
 				// std::cout << "score w match index:         " << scoreWithIndex << "\n";
 				// std::cout << "score w index & length diff: " << scoreWithIndexAndLength<< "\n" << "\n";
-				scores[i] = scoreWithIndexAndLength;
+				scoresArr[i] = scoreWithIndexAndLength;
 			}
 		}
 	}
 	std::cout << " \n";
-	std::vector<int> sortedIndices(len);
+	
 	std::cout << "sorting"
 			  << "\n";
-	// std::cout << scores[60038] << " ," << scores[60039] << "\n" << "\n";
-	std::cout << sizeof(scores) / sizeof(scores[0]) << "\n";
+	std::cout << sizeof(scoresArr) / sizeof(scoresArr[0]) << "\n";
 	std::cout << len << "\n";
 
-	// // for (auto i: sort_indexes(scores)) {
-	// // }
-	hashSortIndices(scores, len, sortedIndices);
+	hashSortIndices(scoresArr, len, sortedIndices);
 
 	std::cout << "Sorted array is\n";
-	printArray(scores, len, sortedIndices);
+	printArray(scoresArr, len, sortedIndices);
+
+
 }
 
-// class Friend {
-//   public:
-//     std::string to_json();
-//     std::string first_name;
-//     std::string last_name;
+
+// comment out here to before main for normal compile
+class Score {
+  public:
+    std::string to_json();
+    std::string text;
+    int index;
 //   private:
 //     std::string format(std::string name, std::string value);
-// };
+};
 
-// class Friends {
-//   public:
-//     char* to_json();
-//     void add_friend(std::string first_name, std::string last_name);
+class Scores {
+  public:
+    char* to_json();
+    void add_Score(std::string text, int index);
 
-//   private:
-//     std::vector<Friend> _friends;
-// };
+  private:
+    std::vector<Score> _Scores;
+};
 
-// std::string Friend::to_json() {
-//   return "{" + format("firstName", first_name) + "," + format("lastName", last_name) + "}";
-// }
+std::string Score::to_json() {
+  return "\"" + text + "\"" + "," + std::to_string(index);
+}
 
-// std::string Friend::format(std::string name, std::string val) {
+// std::string Score::format(std::string name, std::string val) {
 //   return "\"" + name + "\":" + "\"" + val + "\"";
 // }
 
-// void Friends::add_friend(std::string first_name, std::string last_name)
-// {
-//   Friend f;
-//   f.first_name = first_name;
-//   f.last_name = last_name;
+void Scores::add_Score(std::string text, int index)
+{
+  Score f;
+  f.text = escape_json(text);
+  f.index = index;
 
-//   _friends.push_back(f);
-// }
-
-// char* Friends::to_json() {
-
-//   std::string json = "[";
-
-//   for(int i = 0; i < _friends.size(); i++)
-//   {
-//     json += _friends[i].to_json();
-
-//     if(i < _friends.size() -1)
-//     {
-//       json += ",";
-//     }
-//   }
-
-//   json += "]";
-
-//   char* char_array = new char[json.length()]();
-//   strcpy(char_array, json.c_str());
-
-//   return char_array;
-// }
-
-// extern "C" void search(char * query) {
-//   Friends friends;
-//   friends.add_friend(query, "Egg");
-//   friends.add_friend("Eggy", "McEgg");
-// 	cppSearch(query);
-//   char* json = friends.to_json();
-
-//     EM_ASM({
-//     console.log(UTF8ToString($0));
-//     egg(UTF8ToString($0));
-//     // e.data = UTF8ToString($0);
-// }, json);
-
-//   delete json;
-// }
-void things(){
-	cppSearch();
+  _Scores.push_back(f);
 }
 
-int main()
-{
+char* Scores::to_json() {
 
-	std::ifstream myfile;
-	std::string line;
+  std::string json = "[";
 
+  for(int i = 0; i < _Scores.size(); i++)
+  {
+    json += _Scores[i].to_json();
 
-	myfile.open("machineTextTextCombined.json");//helloTest.txt   machineTextTextCombined.json
-	int fileLineIter = 0;
-	while (getline(myfile, line)){
-		// std::cout << line  << typeid(line.c_str()).name() << line.c_str() << typeid(line).name() << std::endl;
-		// mapTextData[fileLineIter] = new char [line.size()+1];
-		// strcpy(mapTextData[fileLineIter], line.c_str()); 
-		// std::cout << "line is:" << line;
-		mapTextData[fileLineIter] = line;
-		// std::cout << "   in arr is;" << mapTextData[fileLineIter] << std::endl;;
-		fileLineIter++;
+    if(i < _Scores.size() -1)
+    {
+      json += ",";
+    }
+  }
+
+  json += "]";
+
+  char* char_array = new char[json.length()]();
+  strcpy(char_array, json.c_str());
+
+  return char_array;
+}
+
+extern "C" void search(char * query) {
+  cppSearch(query);
+  Scores Scores;
+  for (int i = 0; i < 200; i++)
+	{
+		Scores.add_Score(mapTextData[sortedIndices[i]], sortedIndices[i]);
 	}
-	myfile.close();
+  char* json = Scores.to_json();
+
+    EM_ASM({
+    console.log(UTF8ToString($0));
+    egg(UTF8ToString($0));
+    // e.data = UTF8ToString($0);
+}, json);
+  delete json;
+	for (int i = 0; i < searchTextLen; i++)
+	{
+		scoresArr[i] = 0.0;
+	}
+}
+
+
+int main()
+{	
+	
+
+	// std::ifstream myfile;
+	// std::string line;
+	for (int i = 0; i < searchTextLen; i++)
+	{
+		scoresArr[i] = 0.0;
+	}
 	int egg = 0;
 	std::cout << mapTextData[0] << "\n";
 	std::cout << "eggStart"
 			  << "\n";
-	auto start = high_resolution_clock::now();
-	// cppSearch();
-	things();
+	start = high_resolution_clock::now();
+	cppSearch("hello");
 	// search();
 
 	auto end = high_resolution_clock::now();
 	duration<double, std::milli> diff = end - start; //
 	std::cout << diff.count() << " ms"
 			  << "\n";
-	// std::cout << "egg" << "\n";
 
-	// std::cout << diff.count() << " ms" << "\n";
-	// // Driver program to test above function.
-	// int arr[] = {100, 12, 100, 1, 1, 12, 100, 1, 12, 100, 1, 1};
-	// int n = sizeof(arr) / sizeof(arr[0]);
-	// int sortedIndices[n];
-	// // std::cout << "Input array is\n";
-	// // printArray(arr, n);
+	// std::cout << sample_map[1] << " " << sample_map[2] << std::endl;
 
-	// hashSortIndices(arr, n, sortedIndices);
 
-	// std::cout << "Sorted array is\n";
-	// printArray(arr, n, sortedIndices);
 
+
+	// std::bitset<8> bitset3(std::string("11111100"));
+	// std::cout << sample_map["ee"];
 	return 0;
 }
+// emcc -O3 ./wams.cpp ./data.cpp -o ./generatedWasm/test.js -s WASM=1 -s EXPORTED_FUNCTIONS="['_search', '_malloc', '_free']" -s EXTRA_EXPORTED_RUNTIME_METHODS="["cwrap", "UTF8ToString"]" -s TOTAL_MEMORY=28311552 -s ALLOW_MEMORY_GROWTH=1
+
+
+
+

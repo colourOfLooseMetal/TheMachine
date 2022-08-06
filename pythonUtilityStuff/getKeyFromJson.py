@@ -52,19 +52,26 @@ for filename in ['./showMapData\sm.json',
             line = line.replace('\\"','"')
 
             text.append(remove_non_ascii_2(line))
-# maxlen = 1;
-# for string in text:
-#     if len(string) > maxlen:
-#         maxlen = len(string)
-#         print(maxlen)
-#         print(string)
-# input()
+maxlen = 1;
+for string in text:
+    if len(string) > maxlen:
+        maxlen = len(string)
+        print(maxlen)
+        print(string)
+input()
 #
-
+eachTextLen = []
+for string in text:
+    eachTextLen.append(len(string))
 
 print(len(text))
-with open('machineTextTextCombined.json', 'w') as f:
-    for line in text:
-        f.write("%s\n" % line)
-# with open('machineTextTextCombined.json', 'w') as out_file:
-#     json.dump(text, out_file)
+# with open('machineTextTextCombined.json', 'w') as f:
+#     for line in text:
+#         f.write("%s\n" % line)
+
+
+with open('machineTextTextCombined.json', 'w') as out_file:
+    json.dump(text, out_file)
+
+# with open('strLens.json', 'w') as out_file:
+#     json.dump(eachTextLen, out_file)

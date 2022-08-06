@@ -9,6 +9,7 @@ import numpy
 import numpy as np
 # Opening JSON file
 text = []
+import binascii
 
 
 
@@ -17,17 +18,18 @@ def remove_non_ascii_2(text):
     return re.sub(r'[^\x00-\x7F]',' ', text)
 
 with open('./machineTextTextCombined.json') as json_file:
-    data = json.load(json_file)
+    text = json.load(json_file)
 
     # Print the type of data variable
-    print("Type:", type(data))
+    print("Type:", type(text))
 
     # Print the data of dictionary
-for textLine in data:
-    text.append(remove_non_ascii_2(textLine).lower().replace("  ", " ").replace("\n", " "))
+#do this in get key from json so that they are the same then just use machinetextcombined
+# for textLine in data:
+#     text.append(remove_non_ascii_2(textLine).lower().replace("  ", " ").replace("\n", " "))
 
 print(len(text))
-input() #365697
+# input() #365697
 
 allLetters = list(string.ascii_lowercase)#set(("a","b"))
 allLetters.append(" ")
@@ -40,11 +42,11 @@ allLetters.append(" ")
 twoLetterWordsMap= {}
 for letter in allLetters:
     for secondLetter in allLetters:
-        twoLetterWordsMap[letter+secondLetter] = np.zeros((len(text)), dtype=bool)
+        twoLetterWordsMap[letter+secondLetter] = np.zeros((365704), dtype=bool)
 print(len(twoLetterWordsMap))
 
 for i, t in enumerate(text):
-    if(i % 1000 == 0):
+    if(i % 10000 == 0):
         print(i)
         print(t)
     for letterIndx in range(len(t)-1):
@@ -60,7 +62,7 @@ print(type(twoLetterWordsMap))
 print(type(twoLetterWordsMap["aa"]))
 # input()
 searchterm = "hello there"
-r = np.zeros((len(text)), dtype=np.int8)
+r = np.zeros((365704), dtype=np.int8)
 
 for key in twoLetterWordsMap:
     print(key)
@@ -72,7 +74,42 @@ print(len(text))
 unique, counts = np.unique(r, return_counts=True)
 print(unique, counts)
 
+# print(bytearray(numpy.packbits(np_bin_array)).decode().strip("\x00"))
 
+# f=open('twoLetterWordsMap.txt','a')
+# bsetNameIter = 0
+for key in twoLetterWordsMap:
+    # print(bytearray(numpy.packbits(twoLetterWordsMap[key])).decode().strip("\x00"))
+    l = list(twoLetterWordsMap[key][0:16].astype(int))
+    output = "0b" + "".join(str(i) for i in l)
+
+    print(l)
+    print(output)
+    input()
+#     #desired output
+#     # std::bitset<searchTextLen> bset1(std::string("1000"));
+#     # std::bitset<searchTextLen> bset2(std::string("0001"));
+#     #
+#     # std::map < std::string, std::bitset < searchTextLen >> sample_map
+#     # {
+#     #     {1, bset1},
+#     #     {2, bset2}
+#     # };
+#
+#     f.write('std::bitset<searchTextLen> bset'+str(bsetNameIter)+'(std::string("')
+#     np.savetxt(f, twoLetterWordsMap[key].astype(int), fmt='%i', newline='', delimiter='')
+#     f.write('"));'+"\n")
+#     bsetNameIter += 1
+#     # Open a file with access mode 'a'
+#     # with open("twoLetterWordsMap.txt", "a") as file_object:
+#         # Append 'hello' at the end of file
+#         # file_object.write(twoLetterWordsMap[key])
+# bsetNameIter = 0
+# f.write("\n")
+# f.write("std::map < std::string, std::bitset < searchTextLen >> sample_map\n{\n")
+# for key in twoLetterWordsMap:
+#     f.write('{"'+ key + '", bset' + str(bsetNameIter) +"},")
+#     bsetNameIter += 1
 
 # with open('machineTextTextCombined.txt', 'w') as out_file:
 #     json.dump(text, out_file)
