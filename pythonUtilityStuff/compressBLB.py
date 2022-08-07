@@ -1,5 +1,5 @@
 import gzip, shutil
-fname = '../test.wasm'
+fname = './test.wasm'
 src = open(fname, 'rb')
 dest = gzip.open(fname+".gz", 'wb', compresslevel=1)
 

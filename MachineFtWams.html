@@ -74,6 +74,18 @@
 		}
 	</script>
 	<style>
+		.col-md-3 {
+  background: gray;
+  width: 100%;
+  max-height: 100%;
+  display: flex;
+}
+
+.col-md-3 img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
 		@import url(fontawesome-all.min.css);
 		@import url("https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Raleway:400,800,900");
 
@@ -3971,7 +3983,7 @@
 				<header>
 					<div class="title">
 						<h2><a href="#">The Machine</a></h2>
-						<p>ft. WAMS <small>(web assembly machine searcher)</small></p>
+						<a href = "https://github.com/colourOfLooseMetal/TheMachine"><p>ft. WAMS <small>(web assembly machine searcher)</small></p></a>
 					</div>
 
 				</header>
@@ -4045,7 +4057,7 @@
 	<!-- Scripts -->
 	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
 	<script src="../../../assets/futureimperfect/js/breakpoints.min.js"></script>
-	<script src="../../../assets/futureimperfect/js/browser.min.js"></script> -->
+	<script src="../../../assets/futureimperfect/js/browser.min.js"></script>
 
 	<script src="../../../assets/futureimperfect/js/util.js"></script>
 	<script src="../../../assets/futureimperfect/js/main.js"></script>
@@ -4163,8 +4175,12 @@
 	function loadDone() {
 		document.getElementById("loading").style.display = "none";
 	}
-
+	jStringCheck = '';
 	function egg(jsonString) {
+		jStringCheck = jsonString;
+		//having weird characters leak through so adding end000 at end in c++ then using that, hacky but eh
+		// jStringCheck.indexOf("END000")
+		jsonString = jsonString.slice(0,jStringCheck.indexOf("END000"));
 		// console.log(jsonString.slice(599, 620));
 		advResult = JSON.parse(jsonString);
 		// console.log(egggggg);
@@ -4252,10 +4268,10 @@
 
 	//the glorious search function
 	function search() {
+		$("#filter-records").html("searching");
 		outputContentIndex = 0;
 		count = 0;
 		outputContent = [];
-		$("#filter-records").html("searching");
 		// resultLimit = $("#maxResults option:selected").val();
 		// contribMode = $("#contrib").is(":checked");
 		var searchField = $("#txt-search").val();
@@ -4264,7 +4280,7 @@
 			return;
 		}
 		//wams search will then call egg when done to process results
-		wamsSearch(searchField);
+		wamsSearch(searchField.toLowerCase());
 
 		
 

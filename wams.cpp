@@ -524,7 +524,7 @@ void cppSearch(std::string query)
 	std::cout << "maxEditDist: " << maxEditDist << "\n";
 	std::cout << "now running fuzzy bitap"
 			  << "\n";
-	int lesMatch = 0;
+	// int lesMatch = 0;
 	for (int i = 0; i < len; i++)
 	{
 		short int singleMatchIdx = SearchStringFuzzy(mapTextData[i], query, maxEditDist);
@@ -537,7 +537,7 @@ void cppSearch(std::string query)
 			matchIndex[i] = singleMatchIdx;
 		}
 	}
-	std::cout << "lesmatch, 0 cause disabled but that was to run the bitap fuzzy search: " << lesMatch << "\n";
+	// std::cout << "lesmatch, 0 cause disabled but that was to run the bitap fuzzy search: " << lesMatch << "\n";
 	// int msl = queryLen;
 	// msl = std::max(msl, 6);
 	// const int match_distance = std::min(msl, 8) / 2 - 1; // min 2 max 3 //this can be calced once not each time
@@ -638,7 +638,7 @@ char* Scores::to_json() {
     }
   }
 
-  json += "]";
+  json += "]END000";
 
   char* char_array = new char[json.length()]();
   strcpy(char_array, json.c_str());
@@ -665,6 +665,10 @@ extern "C" void search(char * query) {
 	{
 		scoresArr[i] = 0.0;
 	}
+	for (int i = 0; i < searchTextLen; i++)
+	{
+		sortedIndices[i] = 999;
+	}
 }
 
 
@@ -674,6 +678,10 @@ int main()
 
 	// std::ifstream myfile;
 	// std::string line;
+	for (int i = 0; i < searchTextLen; i++)
+	{
+		sortedIndices[i] = 999;
+	}
 	for (int i = 0; i < searchTextLen; i++)
 	{
 		scoresArr[i] = 0.0;
@@ -700,8 +708,7 @@ int main()
 	// std::cout << sample_map["ee"];
 	return 0;
 }
+
+
+//-O3 for release -O1 for test
 // emcc -O3 ./wams.cpp ./data.cpp -o ./generatedWasm/test.js -s WASM=1 -s EXPORTED_FUNCTIONS="['_search', '_malloc', '_free']" -s EXTRA_EXPORTED_RUNTIME_METHODS="["cwrap", "UTF8ToString"]" -s TOTAL_MEMORY=28311552 -s ALLOW_MEMORY_GROWTH=1
-
-
-
-
