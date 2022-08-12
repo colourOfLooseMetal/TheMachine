@@ -1,11 +1,3 @@
-/*****Please include following header files*****/
-// string
-// limits.h
-/***********************************************/
-
-/*****Please use following namespaces*****/
-// std
-/*****************************************/
 #include <iostream>
 // using namespace std;
 #include <limits.h>
@@ -39,7 +31,7 @@ auto start = high_resolution_clock::now();
 
 
 
-
+//escape special characters in json string so we dont reach unexpected end of file
 std::string escape_json(const std::string &s) {
     std::ostringstream o;
     for (auto c = s.cbegin(); c != s.cend(); c++) {
@@ -72,7 +64,7 @@ void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 		// }
 	}
 
-	std::cout << "bopoooo number of unique scores  " << numsAndCounts.size() << "\n";
+	// std::cout << "bopoooo number of unique scores  " << numsAndCounts.size() << "\n";
 	int numOfEachUniqueVal[numsAndCounts.size()];
 	int uniqueValCounter[numsAndCounts.size()];
 	// double uniqueVals[numsAndCounts.size()];
@@ -159,12 +151,14 @@ void printArray(double arr[], int n, std::vector<int> sortedIndices)
 			std::cout << "\n";
 		}
 	}
-	std::cout << "\n over Thresh count: " << overThreshCount; // 1555 450-380 ms print if i < 100 "hello"
+	// std::cout << "\n over Thresh count: " << overThreshCount; // 1555 450-380 ms print if i < 100 "hello"
 
-	std::cout << "\n";
+	// std::cout << "\n";
 }
 
-// normal one
+// so this isnt the jaro algoritim, and this isnt the sliding window search, this gets called when the query is longer than the text we are searching, it wouldnt be a bad idea to slide the searched text over the query
+//i guess the same way we slide the query over the searched text in the next function, ill explain the scoring in the next function, i dont actually know how all of this function works lol, i mean i kinda do, but the guts are jaro
+//and then i change the scoring
 double jaro_actual_search(const std::string s1, const std::string s2, int l1, int l2, const int match_distance)
 {
 	if (l1 == 0)
@@ -224,7 +218,8 @@ double jaro_actual_search(const std::string s1, const std::string s2, int l1, in
 	return (score);
 }
 
-/// s2 is pattern
+/// s2 is pattern/query
+//so like i said earlier, guts are jaro (not jaro winkler)
 double jaro_actual_search_but_with_window_bs(const std::string s1, const std::string s2, int l1, int l2, int addedPatLen, int extraSpaceLoc, const int match_distance)
 {
 	if (cLog)
@@ -264,15 +259,18 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 	// 	return 0.0;
 	double t = 0.0;
 	// int k = 0;
+	//for every character that matches but..
 	for (int i = 0; i < l1; i++)
 		if (s1_matches[i])
-		{
+		{//if the character is not in the correct spot but is one space off (since our match distance is alwways 2)
 			if (s2[i] != s1[i])
 			{
+				//add a small amout to t
 				t += 0.1;
 			}
 			else
 			{
+				//otherwise add 1 to actual matches
 				actualMatches += 1;
 			}
 		}
@@ -283,12 +281,21 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 		std::cout << " actM:" << actualMatches << " t:" << t << "\n";
 		std::cout << "extraspaceLoc " << extraSpaceLoc << "\n";
 	}
+	//if we have extra space added before or after the query string to check for characters out of place beyond the length of the query string
 	// extraSpaceLoc is 0 for before and after 1 for prefix 2 for suffix
 	if (extraSpaceLoc == 2)
 	{
 		// std::cout << addedPatLen << l1-1 << s2[3] ;
 		// std::cout << "hi jesse" << ":" << s2[l1-1] << ":" << s1[l1-1] << ":" << "\n";
 		// std::cout << s1 << ":" << s2 << "\n";
+		//if the extra spaces do match, we dont consider the extra string length when scoring, what this does is
+		//subtract 1 from added pat len, the full pattern length with the padded spaces is l2,
+		//so if we had 'hello' as a query and ' hello ' as search text, we would pad with spaces when  we reach 2nd index while sliding in the outer function,
+		//then in this function we see both outer spaces match, so added pat len goes from 2 to 0, so then when we score we just have 7/7-0
+		//
+		//for something like 'hellzo' we would have 4 that match, then t is 0.1 for the out of place o, added pat len is 1, and l2 is 6,
+		//added pat len is not subtracted because it doesnt match at that inex, (the last char in s2 is ' ' and in s1 is 'o')
+		//so we get 4+0.1/6-1, which is 0.82, hope that makes sense future me or whichever poor soul chooses to read this :)
 		if (s2[l1 - 1] == s1[l1 - 1])
 		{
 			// actualMatches -= 0.84;
@@ -392,7 +399,7 @@ double jaro_sliding_window(const std::string string, const int strLen, const std
 	}
 	return maxScore;
 }
-
+//this is a hard match, not used in fuzzy, it uses bitap, idk how it all works i copied it in lol
 static int SearchString(std::string stringIn, std::string pattern)
 {
 	std::string text = stringIn; // to_lowercase(stringIn);
@@ -428,6 +435,9 @@ static int SearchString(std::string stringIn, std::string pattern)
 	return -1;
 }
 
+//this is levenshtein distance usiong bitap, it is much faster than the jaro sliding alternative above
+//so we use it to filter, since if there isnt a decent levenshtein distance match there wont be a match at all, but the scoring is too limited so im not using this for that just
+//a step along the way
 static short int SearchStringFuzzy(std::string text, std::string pattern, int k)
 {
 	int result = -1;
@@ -480,6 +490,7 @@ static short int SearchStringFuzzy(std::string text, std::string pattern, int k)
 // casual mil nbd, we only need like 200k right now tho, but soon...
 std::bitset<1000000> bitSetOfMatches;
 
+//the main search function
 void cppSearch(std::string query)
 {
 	// 	std::cout << "in a function" << std::endl;
@@ -587,6 +598,9 @@ void cppSearch(std::string query)
 
 }
 
+//classes to hold score info to make passing back to js easier, score is as you see the score index, and the text of the string, we dont actually pass a score back... awkward lol
+//might eventually but eh
+//the index is from our combined list obvs and is used js side to find the index of the image in the set
 
 // comment out here to before main for normal compile
 class Score {
@@ -678,10 +692,12 @@ int main()
 
 	// std::ifstream myfile;
 	// std::string line;
+	//set to high number, since 0 will be first place
 	for (int i = 0; i < searchTextLen; i++)
 	{
 		sortedIndices[i] = 999;
 	}
+	//set all to 0
 	for (int i = 0; i < searchTextLen; i++)
 	{
 		scoresArr[i] = 0.0;
