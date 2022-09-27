@@ -7,7 +7,7 @@
 <html>
 
 <head>
-	<script src="test.js"></script>
+	<script src="wams.js"></script>
 	<title>The Machine</title>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
@@ -4202,6 +4202,9 @@
 
 		$("#filter-records").html(outputContent.slice(0, outputContentIndex));
 		// console.log("done");
+		console.log("search took:");
+		console.timeEnd("searchTimer");
+		console.log("ms");
 	}
 	var wamsSearch = cwrap('search', 'string', ['string']);
 	console.log("ayy we out and not in yet");
@@ -4268,6 +4271,8 @@
 
 	//the glorious search function
 	function search() {
+		console.time("searchTimer")
+		
 		$("#filter-records").html("searching");
 		outputContentIndex = 0;
 		count = 0;

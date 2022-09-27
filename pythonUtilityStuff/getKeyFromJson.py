@@ -43,19 +43,27 @@ for filename in ['./showMapData\sm.json',
         print(filename, ": ",cumLen)
         cumLen += len(data)
         # Print the type of data variable
-        # print("Type:", type(data))
-        # for dict in data:
-        #     line = remove_non_ascii_2(dict["text"]).lower().replace("  ", " ").replace("\n", " ")
-        #     line = re.sub(r"\s*{.*}\s*", " ", line)
-        #     line = re.sub('\s+',' ',line)
-        #     line = line.replace("</b>", " ")
-        #     line = line.replace("<b>", " ")
-        #     line = line.replace("</i>", " ")
-        #     line = line.replace("<i>", " ")
-        #     line = line.replace('\\"','"')
-        #
-        #     text.append(remove_non_ascii_2(line))
+        print("Type:", type(data))
+        for dict in data:
+            line = remove_non_ascii_2(dict["text"]).lower().replace("  ", " ").replace("\n", " ")
+            line = re.sub(r"\s*{.*}\s*", " ", line)
+            line = re.sub('\s+',' ',line)
+            line = line.replace("</b>", " ")
+            line = line.replace("<b>", " ")
+            line = line.replace("</i>", " ")
+            line = line.replace("<i>", " ")
+            line = line.replace('\\"','"')
+            # if line[1] == "-":lots of things do the stutter like  i-i'm sorry...  i-i'm fine...  t-this is...?, we could remove the start stutter but idk yeah
+            #     print(line)
+
+            text.append(remove_non_ascii_2(line))
 print(cumLen)
+
+# with open('machineTextTextCombined.json', 'w') as out_file:
+#     json.dump(text, out_file)
+
+
+
 # maxlen = 1;
 # for string in text:
 #     if len(string) > maxlen:
@@ -74,8 +82,5 @@ print(cumLen)
 # #         f.write("%s\n" % line)
 #
 #
-# with open('machineTextTextCombined.json', 'w') as out_file:
-#     json.dump(text, out_file)
-
 # with open('strLens.json', 'w') as out_file:
 #     json.dump(eachTextLen, out_file)

@@ -294,7 +294,7 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 		//then in this function we see both outer spaces match, so added pat len goes from 2 to 0, so then when we score we just have 7/7-0
 		//
 		//for something like 'hellzo' we would have 4 that match, then t is 0.1 for the out of place o, added pat len is 1, and l2 is 6,
-		//added pat len is not subtracted because it doesnt match at that inex, (the last char in s2 is ' ' and in s1 is 'o')
+		//added pat len is not reduced because it doesnt match at that index, (the last char in s2 is ' ' and in s1 is 'o')
 		//so we get 4+0.1/6-1, which is 0.82, hope that makes sense future me or whichever poor soul chooses to read this :)
 		if (s2[l1 - 1] == s1[l1 - 1])
 		{
@@ -559,7 +559,8 @@ void cppSearch(std::string query)
 		if (bitSetOfMatches[i] == 1)
 		{
 			// std::cout << mapTextData[i] << "\n";
-			double score = jaro_sliding_window(mapTextData[i], eachTextLen[i], query, queryLen, 2, matchIndex[i]); // 323ms"hello"
+			int textLen = strlen(mapTextData[i]);//length of string we are checking/number of characters
+			double score = jaro_sliding_window(mapTextData[i], textLen, query, queryLen, 2, matchIndex[i]); // 323ms"hello"
 			// score cutoff thresh, otherwise will just be 0
 			//  if (score > 0.5) the initial filtering kinda does this already in it's own way
 			{
@@ -570,7 +571,7 @@ void cppSearch(std::string query)
 				// int mIndxModified = (matchIndex[i] >> 1) + (matchIndex[i] & 1);
 				// std::cout << "\n mindxModified" << mIndxModified << "\n";
 				double scoreWithIndex = score - matchIndex[i] * .002;
-				int resSize = eachTextLen[i];//strlen(mapTextData[i]);//strlen(mapTextData[i]);//strlen for char array mapTextData[i].length(); for string
+				int resSize = textLen;//eachTextLen[i];//strlen(mapTextData[i]);//strlen(mapTextData[i]);//strlen for char array mapTextData[i].length(); for string
 				int lengthDiff = abs(resSize - queryLen);
 				// int lenDiffModified = (lengthDiff >> 1) + (lengthDiff & 1);
 				double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
