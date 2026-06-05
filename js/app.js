@@ -151,6 +151,9 @@
 	var loadedShows = [];
 	// Manifest entry list fetched once; cached so checkbox toggles re-use it without re-fetching JSON.
 	var g_manifest = null;
+	// True when the checkbox selection has changed since the last corpus load.
+	// search() rebuilds the corpus before searching if this is set, then clears it.
+	var corpusDirty = true;
 
 	// Load the selected shows into the wasm corpus (one copy into C++ memory; no JS-side cache).
 	// selectedShows: array of manifest entries in the order they should be loaded.
@@ -191,36 +194,42 @@
 
 		// Determine mobile default: detect by UA, same regex already used elsewhere in app.js.
 		var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-		var mobileSubset = ['sm', 'jojo', 'dbz']; // lighter default for mobile
 
 		// Build show-selection checkboxes from manifest (so adding a show needs no HTML edit).
+		// Desktop: all checked. Mobile: all unchecked — corpus loads on first search.
+		// The template CSS expects <input> + <label> as siblings (not input inside label):
+		// input[type="checkbox"] is hidden (opacity:0), label:before draws the box via Font Awesome.
 		var container = document.getElementById("checkboxes");
 		g_manifest.forEach(function(show) {
-			var checked = !isMobile || mobileSubset.indexOf(show.key) !== -1;
-			var div = document.createElement('div');
-			div.className = 'custom-control custom-checkbox';
-			div.innerHTML =
-				'<input type="checkbox" class="custom-control-input show-checkbox" id="show-' + show.key + '"' +
-				(checked ? ' checked' : '') + '>' +
-				'<label class="custom-control-label" for="show-' + show.key + '">' + show.name + '</label>';
-			container.appendChild(div);
+			var input = document.createElement('input');
+			input.type = 'checkbox';
+			input.className = 'show-checkbox';
+			input.id = 'show-' + show.key;
+			input.checked = !isMobile;
+			var label = document.createElement('label');
+			label.htmlFor = 'show-' + show.key;
+			label.textContent = show.name;
+			container.appendChild(input);
+			container.appendChild(label);
 		});
 
-		// Re-load corpus whenever a checkbox changes.
-		container.addEventListener('change', async function() {
-			var selected = g_manifest.filter(function(s) {
-				var cb = document.getElementById('show-' + s.key);
-				return cb && cb.checked;
-			});
-			if (selected.length > 0) await loadSelection(selected);
+		// Mark dirty when a checkbox changes; corpus rebuilds on next search, not immediately.
+		container.addEventListener('change', function() {
+			corpusDirty = true;
 		});
 
-		// Initial load.
+		// Desktop: load corpus eagerly so the first search is instant.
+		// Mobile: nothing is checked, so skip the load — corpus builds on first search.
 		var initialSelected = g_manifest.filter(function(s) {
 			var cb = document.getElementById('show-' + s.key);
 			return cb && cb.checked;
 		});
-		await loadSelection(initialSelected);
+		if (initialSelected.length > 0) {
+			await loadSelection(initialSelected);
+			corpusDirty = false;
+		} else {
+			loadDone(); // nothing to load; hide the loading overlay
+		}
 	};
 
 
@@ -277,30 +286,31 @@
 
 
 	// the glorious search function - entry point fired by the Search button / Enter key.
-	// Clears render state, then hands the lowercased query to the wasm engine; the engine
-	// calls egg() back when done, which is what actually renders the results.
-	function search() {
-		console.time("searchTimer")
-		
-		$("#filter-records").html("searching");
-		outputContentIndex = 0;
-		count = 0;
-		outputContent = [];
-		// resultLimit = $("#maxResults option:selected").val();
-		// contribMode = $("#contrib").is(":checked");
+	// If corpusDirty (checkbox selection changed since last load), rebuilds the corpus first.
+	// Then hands the lowercased query to the wasm engine; the engine calls egg() back when done.
+	async function search() {
 		var searchField = $("#txt-search").val();
 		if (searchField === "") {
 			$("#filter-records").html("");
 			return;
 		}
-		// query is lowercased because the corpus (mapTextData in C++) is all lowercase.
-		//wams search will then call egg when done to process results
+
+		if (corpusDirty) {
+			var selected = g_manifest ? g_manifest.filter(function(s) {
+				var cb = document.getElementById('show-' + s.key);
+				return cb && cb.checked;
+			}) : [];
+			await loadSelection(selected);
+			corpusDirty = false;
+		}
+
+		console.time("searchTimer");
+		$("#filter-records").html("searching");
+		outputContentIndex = 0;
+		count = 0;
+		outputContent = [];
+		// query is lowercased because the corpus is all lowercase.
 		wamsSearch(searchField.toLowerCase());
-
-		
-
-
-
 	}
 	// Map an active-corpus index to [showFolder, perShowImageNumber].
 	// loadedShows is built by loadSelection() to mirror the order shows were committed
@@ -326,7 +336,7 @@
 		output += '<div class="col-md-6 well">';
 		output +=
 			'<div class="col-md-3"><img class="img-responsive" id="' + dirNnum[0] + dirNnum[1] + '" object-fit: contain" src="' +
-			"http://colourofloosemetal.com/assets/" + dirNnum[0] + "/" +
+			"https://colourofloosemetal.com/assets/" + dirNnum[0] + "/" +
 			dirNnum[1] +
 			".jpg" +
 			'" alt="' +
