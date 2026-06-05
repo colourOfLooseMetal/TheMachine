@@ -62,15 +62,15 @@ $opt = if ($Debug) { '-O1' } else { '-O3' }
 Write-Host "Building wams.js / wams.wasm ($opt) ..." -ForegroundColor Cyan
 $sw = [Diagnostics.Stopwatch]::StartNew()
 
-# Mirrors the command at the bottom of wams.cpp, but outputs wams.* directly and
-# uses the current emscripten flag names (EXPORTED_RUNTIME_METHODS / INITIAL_MEMORY).
+# Corpus is now loaded at runtime from per-show .txt files (see manifest.json),
+# so data.cpp is no longer compiled in. INITIAL_MEMORY starts small; ALLOW_MEMORY_GROWTH
+# lets the heap expand as shows load. HEAPU8 is needed for the JS->wasm copy idiom.
 emcc $opt `
-    "$root\wams.cpp" "$root\data.cpp" `
+    "$root\wams.cpp" `
     -o "$root\wams.js" `
     -s WASM=1 `
-    -s EXPORTED_FUNCTIONS="['_search','_malloc','_free']" `
-    -s EXPORTED_RUNTIME_METHODS="['cwrap','UTF8ToString']" `
-    -s INITIAL_MEMORY=28311552 `
+    -s EXPORTED_FUNCTIONS="['_search','_reserveCorpus','_showWritePtr','_commitShow','_clearCorpus','_malloc','_free']" `
+    -s EXPORTED_RUNTIME_METHODS="['cwrap','UTF8ToString','HEAPU8']" `
     -s ALLOW_MEMORY_GROWTH=1
 
 $code = $LASTEXITCODE

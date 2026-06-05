@@ -1,8 +1,9 @@
 // ============================================================================
 //  wams.cpp - "Web Assembly Machine Searcher", the search engine for The Machine.
 //
-//  Fuzzy-matches a query against ~365,697 lowercase caption lines (mapTextData,
-//  defined in the generated data.cpp) and returns the best ~450 hits to the page.
+//  Fuzzy-matches a query against caption lines loaded at runtime into g_corpus
+//  (loaded from per-show .txt files by JS; see reserveCorpus/showWritePtr/commitShow)
+//  and returns the best ~450 hits to the page.
 //
 //  Pipeline (all driven by cppSearch -> the extern "C" search() wasm export):
 //    Stage 1  SearchStringFuzzy    fuzzy Bitap filter, edit distance <= queryLen/2
@@ -17,11 +18,10 @@
 //              emscripten bits as noted near the Score/Scores classes)
 //
 //  Flip the global `cLog` (just below the includes) to true for per-search
-//  stdout/console tracing. searchTextLen (the corpus size) is defined in data.h.
+//  stdout/console tracing. Corpus size is g_totalLines (set as shows are loaded).
 // ============================================================================
 #include <iostream>
 #include <limits.h>
-#include "data.h"
 #include <string>
 #include <algorithm>
 #include <vector>
@@ -30,7 +30,6 @@
 #include <fstream>
 #include <chrono>
 #include <cctype>
-#include <bitset>
 
 #include <emscripten.h>
 #include <cstring>
@@ -41,8 +40,83 @@
 using namespace std::chrono;
 const bool cLog = false; // console.log
 
-double scoresArr[searchTextLen];
-std::vector<int> sortedIndices(searchTextLen);
+// ---- Corpus store (runtime-loaded; replaces static data.cpp / mapTextData) --
+// All loaded caption lines concatenated, each '\0'-terminated.
+// g_lineOffsets[i] is the byte offset of line i within g_corpus.
+// JS loads shows via reserveCorpus / showWritePtr / commitShow (see exports below).
+std::string           g_corpus;
+std::vector<uint32_t> g_lineOffsets;
+int                   g_totalLines = 0;
+
+inline const char* lineAt(int i) { return g_corpus.data() + g_lineOffsets[i]; }
+
+// ---- Work arrays (resized once when corpus size changes, before each search) -
+std::vector<double>   scoresArr;
+std::vector<int>      sortedIndices;
+std::vector<uint8_t>  g_bitSet;     // replaces fixed bitSetOfMatches
+std::vector<short>    g_matchIndex; // replaces local matchIndex in cppSearch
+
+static int s_workArrayLen = 0;
+static void ensureWorkArrays(int n) {
+    if (s_workArrayLen == n) return;
+    scoresArr.assign(n, 0.0);
+    sortedIndices.assign(n, 999);
+    g_bitSet.assign(n, 0);
+    g_matchIndex.assign(n, 0);
+    s_workArrayLen = n;
+}
+
+// ---- Corpus management exports (called from JS) ------------------------------
+
+// Call once per selection before the per-show showWritePtr/commitShow loop.
+// Reserves exact capacity so subsequent resizes never reallocate (no wasm memory growth mid-loop).
+extern "C" void reserveCorpus(int totalBytes, int totalLines) {
+    g_corpus.reserve((size_t)totalBytes);
+    g_lineOffsets.reserve((size_t)totalLines);
+}
+
+// Grow g_corpus by byteLen and return a pointer to the new region.
+// JS then does Module.HEAPU8.set(showBytes, ptr) — the ONE copy into the store.
+// Precondition: reserveCorpus was called first (no realloc, pointer stays valid).
+extern "C" char* showWritePtr(int byteLen) {
+    size_t off = g_corpus.size();
+    g_corpus.resize(off + (size_t)byteLen);
+    return &g_corpus[off];
+}
+
+// Index the bytes JS just wrote: replace each '\n' with '\0', record line offsets.
+// The .txt file must end with '\n' (getKeyFromJson.py guarantees this) so the
+// trailing '\n' becomes the null terminator for the last line. Returns #lines added.
+extern "C" int commitShow(int byteLen) {
+    if (byteLen <= 0) return 0;
+    size_t regionStart = g_corpus.size() - (size_t)byteLen;
+    int linesAdded = 0;
+    size_t lineStart = regionStart;
+    for (size_t i = regionStart; i < g_corpus.size(); i++) {
+        if (g_corpus[i] == '\n') {
+            g_lineOffsets.push_back((uint32_t)lineStart);
+            g_corpus[i] = '\0';
+            lineStart = i + 1;
+            linesAdded++;
+        }
+    }
+    // Safeguard: if the region didn't end with '\n', null-terminate the last line.
+    if (lineStart < g_corpus.size()) {
+        g_lineOffsets.push_back((uint32_t)lineStart);
+        g_corpus.push_back('\0');
+        linesAdded++;
+    }
+    g_totalLines += linesAdded;
+    return linesAdded;
+}
+
+// Free all corpus memory (swap idiom actually releases capacity) and reset state.
+extern "C" void clearCorpus() {
+    std::string().swap(g_corpus);
+    std::vector<uint32_t>().swap(g_lineOffsets);
+    g_totalLines = 0;
+    s_workArrayLen = 0; // force work-array resize on next search
+}
 
 auto start = high_resolution_clock::now();
 
@@ -67,7 +141,7 @@ std::string escape_json(const std::string &s) {
 // each distinct score, work out where each score's block begins in the sorted output, then
 // scatter each index into its slot. Also rewrites values[] into sorted order as a side
 // effect. The numbered steps below are the classic counting-sort recipe.
-void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
+void hashSortIndices(std::vector<double> &values, int n, std::vector<int> &sortedIndices)
 {
 	// 1. Create an empty hash table.
 	std::map<double, int> numsAndCounts;
@@ -144,7 +218,7 @@ void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 // Debug-only: dump the top 100 results (caption + score) in sorted order to stdout.
 // Only reached when cLog is true (see the gated call at the end of cppSearch).
 // overThreshCount is a leftover profiling tally of how many scores exceed 0.7.
-void printArray(double arr[], int n, std::vector<int> sortedIndices)
+void printArray(std::vector<double>& arr, int n, std::vector<int> sortedIndices)
 {
 	int overThreshCount = 0;
 	for (int i = 0; i < n; i++)
@@ -155,7 +229,7 @@ void printArray(double arr[], int n, std::vector<int> sortedIndices)
 		}
 		if (i < 100)
 		{
-			std::cout << mapTextData[sortedIndices[i]] << " " << arr[i] << "\n"; // " idx " << i << " " << mapTextData[i] << "\n";
+			std::cout << lineAt(sortedIndices[i]) << " " << arr[i] << "\n"; // " idx " << i << " " << lineAt(i) << "\n";
 			std::cout << "\n";
 		}
 	}
@@ -505,21 +579,19 @@ static short int SearchStringFuzzy(std::string text, std::string pattern, int k)
 	return result;
 }
 
-// casual mil nbd, we only need like 200k right now tho, but soon...
-std::bitset<1000000> bitSetOfMatches;
-
 //the main search function
 void cppSearch(std::string query)
 {
 	if (cLog)
 		std::cout << query << "\n";
 
-	const int len = searchTextLen;
+	const int len = g_totalLines;
 
-	// this is the index the pattern is found in the string
-	std::vector<short int> matchIndex;
-	matchIndex.resize(1000000);
-	std::fill(matchIndex.begin(), matchIndex.end(), 0);
+	// Resize work arrays if corpus changed since last search; reset per-search state.
+	ensureWorkArrays(len);
+	// g_bitSet and g_matchIndex must be cleared each search so previous results don't leak.
+	std::fill(g_bitSet.begin(), g_bitSet.end(), 0);
+	std::fill(g_matchIndex.begin(), g_matchIndex.end(), 0);
 
 	int queryLen = query.length();
 	// for leshacejkven search
@@ -530,18 +602,14 @@ void cppSearch(std::string query)
 		std::cout << "now running fuzzy bitap" << "\n";
 	}
 
-	// bitSetOfMatches is a global, so it MUST be cleared each search - otherwise lines that
-	// matched a PREVIOUS query stay flagged and leak into this query's scoring with stale data.
-	bitSetOfMatches.reset();
-
 	// Stage 1 - fuzzy bitap filter: flag every line within edit distance maxEditDist
 	for (int i = 0; i < len; i++)
 	{
-		short int singleMatchIdx = SearchStringFuzzy(mapTextData[i], query, maxEditDist);
+		short int singleMatchIdx = SearchStringFuzzy(lineAt(i), query, maxEditDist);
 		if (singleMatchIdx != -1)
 		{
-			bitSetOfMatches[i] = 1;
-			matchIndex[i] = singleMatchIdx;
+			g_bitSet[i] = 1;
+			g_matchIndex[i] = singleMatchIdx;
 		}
 	}
 
@@ -550,16 +618,16 @@ void cppSearch(std::string query)
 	// Stage 2 - jaro sliding-window scoring of the filtered lines
 	for (int i = 0; i < len; i++)
 	{
-		if (bitSetOfMatches[i] == 1)
+		if (g_bitSet[i])
 		{
-			int textLen = strlen(mapTextData[i]); // length of string we are checking/number of characters
-			double score = jaro_sliding_window(mapTextData[i], textLen, query, queryLen, 2, matchIndex[i]); // 323ms"hello"
+			int textLen = strlen(lineAt(i)); // length of string we are checking/number of characters
+			double score = jaro_sliding_window(lineAt(i), textLen, query, queryLen, 2, g_matchIndex[i]); // 323ms"hello"
 			// score cutoff thresh, otherwise will just be 0
 			//  if (score > 0.5) the initial filtering kinda does this already in it's own way
 			{
 				// so the best non perfect match would be something like " hell o " since it has the chars and can do one swap to be there
 				// with these numbers, that kind of match would overtake a perfect "hello" match if the hello occured at index 50
-				double scoreWithIndex = score - matchIndex[i] * .002;
+				double scoreWithIndex = score - g_matchIndex[i] * .002;
 				int resSize = textLen;
 				int lengthDiff = abs(resSize - queryLen);
 				double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
@@ -643,9 +711,10 @@ char* Scores::to_json() {
 extern "C" void search(char * query) {
   cppSearch(query);
   Scores Scores;
-  for (int i = 0; i < 450; i++)
+  int topN = std::min(450, g_totalLines);
+  for (int i = 0; i < topN; i++)
 	{
-		Scores.add_Score(mapTextData[sortedIndices[i]], sortedIndices[i]);
+		Scores.add_Score(lineAt(sortedIndices[i]), sortedIndices[i]);
 	}
   char* json = Scores.to_json();
 
@@ -655,56 +724,37 @@ extern "C" void search(char * query) {
     // e.data = UTF8ToString($0);
 }, json);
   delete json;
-	for (int i = 0; i < searchTextLen; i++)
-	{
-		scoresArr[i] = 0.0;
-	}
-	for (int i = 0; i < searchTextLen; i++)
-	{
-		sortedIndices[i] = 999;
-	}
+	// Reset work arrays for the next search.
+	std::fill(scoresArr.begin(), scoresArr.end(), 0.0);
+	std::fill(sortedIndices.begin(), sortedIndices.end(), 999);
 }
 
 
 int main()
-{	
-	
-
-	// std::ifstream myfile;
-	// std::string line;
-	//set to high number, since 0 will be first place
-	for (int i = 0; i < searchTextLen; i++)
-	{
-		sortedIndices[i] = 999;
-	}
-	//set all to 0
-	for (int i = 0; i < searchTextLen; i++)
-	{
-		scoresArr[i] = 0.0;
-	}
-	// int egg = 0;
-	// std::cout << mapTextData[0] << "\n";
-	// std::cout << "eggStart"
-	// 		  << "\n";
+{
+	// Native egg.exe debug path: load a .txt corpus file, then search.
+	// For wasm the loading is done from JS; here we drive it directly.
+	// Uncomment the block below and supply a small <show>.txt next to egg.exe.
+	//
+	// std::ifstream f("sm_test.txt", std::ios::binary | std::ios::ate);
+	// auto sz = (int)f.tellg(); f.seekg(0);
+	// reserveCorpus(sz, 100000);
+	// char* ptr = showWritePtr(sz);
+	// f.read(ptr, sz);
+	// int added = commitShow(sz);
+	// std::cout << "loaded " << added << " lines, total=" << g_totalLines << "\n";
 	// start = high_resolution_clock::now();
-	// // cppSearch("hello");
-	// // search();
-
+	// cppSearch("hello");
 	// auto end = high_resolution_clock::now();
-	// duration<double, std::milli> diff = end - start; //
-	// std::cout << diff.count() << " ms"
-	// 		  << "\n";
-
-	// std::cout << sample_map[1] << " " << sample_map[2] << std::endl;
-
-
-
-
-	// std::bitset<8> bitset3(std::string("11111100"));
-	// std::cout << sample_map["ee"];
+	// duration<double, std::milli> diff = end - start;
+	// std::cout << diff.count() << " ms\n";
 	return 0;
 }
 
 
-//-O3 for release -O1 for test
-// emcc -O3 ./wams.cpp ./data.cpp -o ./generatedWasm/test.js -s WASM=1 -s EXPORTED_FUNCTIONS="['_search', '_malloc', '_free']" -s EXTRA_EXPORTED_RUNTIME_METHODS="["cwrap", "UTF8ToString"]" -s TOTAL_MEMORY=28311552 -s ALLOW_MEMORY_GROWTH=1
+// Build via build.ps1 (see CLAUDE.md). Raw command (-O3 release, -O1 for testing):
+// emcc -O3 .\wams.cpp -o .\wams.js -s WASM=1
+//   -s EXPORTED_FUNCTIONS="['_search','_reserveCorpus','_showWritePtr','_commitShow','_clearCorpus','_malloc','_free']"
+//   -s EXPORTED_RUNTIME_METHODS="['cwrap','UTF8ToString','HEAPU8']"
+//   -s ALLOW_MEMORY_GROWTH=1
+// Note: data.cpp is no longer compiled in - corpus is loaded at runtime from per-show .txt files.

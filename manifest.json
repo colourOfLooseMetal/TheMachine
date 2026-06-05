@@ -1,0 +1,98 @@
+[
+  {
+    "key": "sm",
+    "dir": "sm",
+    "name": "Sailor Moon",
+    "lines": 60941,
+    "bytes": 2005162,
+    "file": "data/sm.txt"
+  },
+  {
+    "key": "cw2003",
+    "dir": "cw2003",
+    "name": "Clone Wars 2003",
+    "lines": 897,
+    "bytes": 31374,
+    "file": "data/cw2003.txt"
+  },
+  {
+    "key": "swPrequel",
+    "dir": "swPrequel",
+    "name": "Star Wars Prequels",
+    "lines": 3982,
+    "bytes": 138250,
+    "file": "data/swPrequel.txt"
+  },
+  {
+    "key": "recess",
+    "dir": "recess",
+    "name": "Recess",
+    "lines": 32260,
+    "bytes": 1051642,
+    "file": "data/recess.txt"
+  },
+  {
+    "key": "DisPix",
+    "dir": "DisPix",
+    "name": "Disney Pixar",
+    "lines": 44838,
+    "bytes": 1468201,
+    "file": "data/DisPix.txt"
+  },
+  {
+    "key": "JohnnyBravo",
+    "dir": "JohnnyBravo",
+    "name": "Johnny Bravo",
+    "lines": 24991,
+    "bytes": 800571,
+    "file": "data/JohnnyBravo.txt"
+  },
+  {
+    "key": "ghibli",
+    "dir": "ghibli",
+    "name": "Ghibli",
+    "lines": 26763,
+    "bytes": 761402,
+    "file": "data/ghibli.txt"
+  },
+  {
+    "key": "looneyTunes",
+    "dir": "looneyTunes",
+    "name": "Looney Tunes",
+    "lines": 19480,
+    "bytes": 644934,
+    "file": "data/looneyTunes.txt"
+  },
+  {
+    "key": "db",
+    "dir": "db",
+    "name": "Dragon Ball",
+    "lines": 31480,
+    "bytes": 1021643,
+    "file": "data/db.txt"
+  },
+  {
+    "key": "dbz",
+    "dir": "dbz",
+    "name": "Dragon Ball Z",
+    "lines": 59952,
+    "bytes": 2247699,
+    "file": "data/dbz.txt"
+  },
+  {
+    "key": "dbzMov",
+    "dir": "dbzMov",
+    "name": "Dragon Ball Z Movies",
+    "lines": 8683,
+    "bytes": 314553,
+    "file": "data/dbzMov.txt"
+  },
+  {
+    "key": "jojo",
+    "dir": "jojo",
+    "name": "JoJo's Bizarre Adventure",
+    "lines": 51430,
+    "bytes": 1770518,
+    "file": "data/jojo.txt"
+  }
+]

@@ -101,16 +101,15 @@
 		}
 	}
 
-	// Hide the full-screen "loading page..." overlay; called once the wasm runtime is ready.
-	function loadDone() {
-		document.getElementById("loading").style.display = "none";
-	}
+	// Show/hide the full-screen "loading page..." overlay.
+	function loadDone()  { document.getElementById("loading").style.display = "none"; }
+	function loadStart() { document.getElementById("loading").style.display = ""; }
 
 	// jStringCheck holds the raw result string from C++ so egg() can find the END000 sentinel.
 	jStringCheck = '';
 	// egg(jsonString): the callback the C++ `search` export invokes (via EM_ASM) with results.
-	// jsonString is flat pairs of caption + global corpus index, ending in a literal sentinel:
-	//   ["caption text", globalIndex, "caption text", globalIndex, ...]END000
+	// jsonString is flat pairs of caption + active-corpus index, ending in a literal sentinel:
+	//   ["caption text", corpusIndex, "caption text", corpusIndex, ...]END000
 	// We strip END000, JSON.parse, then build one card per [text, index] pair.
 	function egg(jsonString) {
 		jStringCheck = jsonString;
@@ -146,16 +145,82 @@
 	// (cwrap + Module come from the emscripten glue in wams.js, loaded in <head>.)
 	var wamsSearch = cwrap('search', 'string', ['string']);
 	console.log("ayy we out and not in yet");
-	// Fires when the .wasm has finished downloading + compiling - only then is searching safe,
-	// so we drop the loading overlay here rather than on the window 'load' event.
-	Module.onRuntimeInitialized = () => {
+
+	// loadedShows: [{key, dir, start, lines}, ...] built as shows are committed.
+	// Used by get_dir_and_index_from_biglistnum to map active-corpus index -> show dir + image num.
+	var loadedShows = [];
+	// Manifest entry list fetched once; cached so checkbox toggles re-use it without re-fetching JSON.
+	var g_manifest = null;
+
+	// Load the selected shows into the wasm corpus (one copy into C++ memory; no JS-side cache).
+	// selectedShows: array of manifest entries in the order they should be loaded.
+	async function loadSelection(selectedShows) {
+		loadStart();
+		document.getElementById("txt-search").disabled = true;
+
+		Module._clearCorpus();
+
+		var totalBytes = selectedShows.reduce(function(a, s) { return a + s.bytes; }, 0);
+		var totalLines = selectedShows.reduce(function(a, s) { return a + s.lines; }, 0);
+		Module._reserveCorpus(totalBytes, totalLines); // exact alloc; no realloc during the loop below
+
+		loadedShows = [];
+		var start = 0;
+		for (var si = 0; si < selectedShows.length; si++) {
+			var s = selectedShows[si];
+			var resp = await fetch(s.file);
+			var u8 = new Uint8Array(await resp.arrayBuffer()); // transient — released after HEAPU8.set
+			var ptr = Module._showWritePtr(u8.length);        // pointer into g_corpus
+			Module.HEAPU8.set(u8, ptr);                       // the ONE copy into wasm memory
+			var added = Module._commitShow(u8.length);         // index in place; u8 is now GC-able
+			loadedShows.push({ key: s.key, dir: s.dir, start: start, lines: added });
+			start += added;
+			console.log("loaded " + s.name + ": " + added + " lines");
+		}
+
+		document.getElementById("txt-search").disabled = false;
+		loadDone();
+	}
+
+	// Fires when the .wasm has finished downloading + compiling - only then is searching safe.
+	Module.onRuntimeInitialized = async function() {
 		console.log("ayy we in");
 
+		// Fetch manifest (single source of truth for show order, line counts, byte sizes).
+		g_manifest = await (await fetch('manifest.json')).json();
 
-		// console.log("After wrapping with cwrap: ", wGreet('hello')); //hello Ajay Kumar because ajay were passed previously
-		// const wamsSearch = Module.cwrap("search", 'string', ['string']);  //wrap original c++ function
-		// wamsSearch("hello");
-		loadDone();
+		// Determine mobile default: detect by UA, same regex already used elsewhere in app.js.
+		var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+		var mobileSubset = ['sm', 'jojo', 'dbz']; // lighter default for mobile
+
+		// Build show-selection checkboxes from manifest (so adding a show needs no HTML edit).
+		var container = document.getElementById("checkboxes");
+		g_manifest.forEach(function(show) {
+			var checked = !isMobile || mobileSubset.indexOf(show.key) !== -1;
+			var div = document.createElement('div');
+			div.className = 'custom-control custom-checkbox';
+			div.innerHTML =
+				'<input type="checkbox" class="custom-control-input show-checkbox" id="show-' + show.key + '"' +
+				(checked ? ' checked' : '') + '>' +
+				'<label class="custom-control-label" for="show-' + show.key + '">' + show.name + '</label>';
+			container.appendChild(div);
+		});
+
+		// Re-load corpus whenever a checkbox changes.
+		container.addEventListener('change', async function() {
+			var selected = g_manifest.filter(function(s) {
+				var cb = document.getElementById('show-' + s.key);
+				return cb && cb.checked;
+			});
+			if (selected.length > 0) await loadSelection(selected);
+		});
+
+		// Initial load.
+		var initialSelected = g_manifest.filter(function(s) {
+			var cb = document.getElementById('show-' + s.key);
+			return cb && cb.checked;
+		});
+		await loadSelection(initialSelected);
 	};
 
 
@@ -237,62 +302,19 @@
 
 
 	}
-	// Map a global corpus index (0..365696) to [showFolder, perShowImageNumber].
-	// mapTextData in C++ is every show concatenated, so these ranges MUST stay in sync with the
-	// index map in wams.cpp (and CLAUDE.md). The image then loads from /assets/<dir>/<num>.jpg.
-	function get_dir_and_index_from_biglistnum(blNum){
-		//convert something like 34323 to sm 34323 and same for others
-		dir = "";
-		num = blNum;
-		if(blNum >= 0 && blNum < 60941){
-			dir = "sm";
+	// Map an active-corpus index to [showFolder, perShowImageNumber].
+	// loadedShows is built by loadSelection() to mirror the order shows were committed
+	// into g_corpus, so this is always in sync with what C++ returns. Binary search
+	// since shows are ordered by ascending start offset.
+	function get_dir_and_index_from_biglistnum(blNum) {
+		var lo = 0, hi = loadedShows.length - 1;
+		while (lo < hi) {
+			var mid = (lo + hi + 1) >> 1;
+			if (loadedShows[mid].start <= blNum) lo = mid;
+			else hi = mid - 1;
 		}
-		else if(blNum >= 60941 && blNum < 61838){
-			dir = "cw2003";
-			num = num - 60941;
-		}
-		else if(blNum >= 61838 && blNum < 65820){
-			dir = "swPrequel";
-			num = num - 61838;
-		}
-		else if(blNum >= 65820 && blNum < 98080){
-			dir = "recess";
-			num = num - 65820;
-		}
-		else if(blNum >= 98080 && blNum < 142918){
-			dir = "DisPix";
-			num = num - 98080;
-		}												
-		else if(blNum >= 142918 && blNum < 167909){
-			dir = "JohnnyBravo";
-			num = num - 142918;
-		}
-		else if(blNum >= 167909 && blNum < 194672){
-			dir = "ghibli";
-			num = num - 167909;
-		}
-		else if(blNum >= 194672 && blNum < 214152){
-			dir = "looneyTunes";
-			num = num - 194672;
-		}
-		else if(blNum >= 214152 && blNum < 245632){
-			dir = "db";
-			num = num - 214152;
-		}
-		else if(blNum >= 245632 && blNum < 305584){
-			dir = "dbz";
-			num = num - 245632;
-		}
-		else if(blNum >= 305584 && blNum < 314267){
-			dir = "dbzMov";
-			num = num - 305584;
-		}
-		else if(blNum >= 314267 && blNum <= 365697){
-			dir = "jojo";
-			num = num - 314267;
-		}
-		return([dir,num]);
-
+		var show = loadedShows[lo];
+		return [show.dir, blNum - show.start];
 	}
 	// Build one result card (screenshot + caption + prev/next buttons) and push its HTML onto
 	// outputContent[]. resultObj is a single [text, globalIndex] pair handed over by egg().
