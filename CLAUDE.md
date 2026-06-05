@@ -133,21 +133,51 @@ Deploy: the page needs `MachineFtWams.html`, `css/styles.css`, `js/app.js`, and
 314267 – 365697  jojo
 ```
 
-## Build
+## Build & deploy test
 
-C++ → wasm with emscripten (command at the bottom of `wams.cpp`):
+**Easy path — `build.ps1`** (PowerShell, repo root). One command builds the wasm
+*and* (optionally) serves the page for a deploy test:
 
+```powershell
+.\build.ps1                 # release build (-O3)  -> wams.js + wams.wasm
+.\build.ps1 -Debug          # fast build (-O1) for iterating
+.\build.ps1 -Serve          # build, then serve http://localhost:8000/MachineFtWams.html
+.\build.ps1 -Debug -Serve   # the usual deploy-test loop
+.\build.ps1 -Serve -Port 9000
 ```
-emcc -O3 ./wams.cpp ./data.cpp -o ./generatedWasm/test.js -s WASM=1 \
-  -s EXPORTED_FUNCTIONS="['_search','_malloc','_free']" \
-  -s EXTRA_EXPORTED_RUNTIME_METHODS="['cwrap','UTF8ToString']" \
-  -s TOTAL_MEMORY=28311552 -s ALLOW_MEMORY_GROWTH=1
+
+The script outputs `wams.js` / `wams.wasm` **straight into the repo root**, which
+is exactly where `MachineFtWams.html` loads them — no rename step. It activates
+the emscripten SDK automatically (see below) if `emcc` isn't already on PATH.
+
+- **emsdk lives at `D:\emsdk`** (emcc 5.0.7) but is *not* on PATH by default;
+  `build.ps1` sources `D:\emsdk\emsdk_env.ps1` for you (with `EMSDK_QUIET=1`).
+  To build by hand in a shell, run that env script first, then `emcc`.
+- **`-Serve` is required to actually run the page** — browsers refuse to load
+  `.wasm` over `file://`, so you need an HTTP server. The script uses
+  `python -m http.server`; served `.wasm` comes back as `application/wasm`.
+- `wams.js` / `wams.wasm` at the repo root are **not** gitignored (only
+  `/generatedwasm` is) — deploy needs both shipped alongside the page, so they
+  show up as untracked after a build. Committing the ~12 MB `wams.wasm` vs.
+  building on deploy is the maintainer's call.
+- `.claude/launch.json` defines a `machine` server (`python -m http.server 8010`)
+  so Claude Code's preview tool can spin the page up for verification.
+
+**Raw command** (what `build.ps1` runs; the comment at the bottom of `wams.cpp`
+is the older form). `-O3` for release, `-O1` for testing:
+
+```powershell
+emcc -O3 .\wams.cpp .\data.cpp -o .\wams.js -s WASM=1 `
+  -s EXPORTED_FUNCTIONS="['_search','_malloc','_free']" `
+  -s EXPORTED_RUNTIME_METHODS="['cwrap','UTF8ToString']" `
+  -s INITIAL_MEMORY=28311552 -s ALLOW_MEMORY_GROWTH=1
 ```
 
-`-O3` for release, `-O1` for testing. Output (`generatedwasm/`, gitignored) is
-the emscripten glue `.js` + `.wasm`; the page loads it as `wams.js`/`wams.wasm`.
-`egg.exe` is a native (g++) build for local debugging — `main()` and the
-`Score`/`Scores` classes are compiled in only for the wasm/native targets
+The `wams.cpp` comment uses the legacy flag names `EXTRA_EXPORTED_RUNTIME_METHODS`
+/ `TOTAL_MEMORY` and outputs `generatedWasm/test.js`; emcc 5 prefers
+`EXPORTED_RUNTIME_METHODS` / `INITIAL_MEMORY`, and `build.ps1` outputs `wams.*`
+directly. `egg.exe` is a native (g++) build for local debugging — `main()` and
+the `Score`/`Scores` classes are compiled in only for the wasm/native targets
 respectively (see the "comment out … for normal compile" note in `wams.cpp`).
 
 ## Files
@@ -155,6 +185,12 @@ respectively (see the "comment out … for normal compile" note in `wams.cpp`).
 ```
 CLAUDE.md               — this file
 README.md               — WAMS scoring walkthrough (worked "hello" example)
+build.ps1               — one-command build (-Debug/-Serve/-Port): activates
+                          D:\emsdk, compiles wams.cpp+data.cpp -> wams.js/.wasm
+                          in repo root, optional local HTTP server. See "Build
+                          & deploy test" above
+.claude/launch.json     — `machine` server def (python http.server 8010) for
+                          Claude Code's preview tool
 MachineFtWams.html      — front-end markup (~250 lines): HTML5UP "Future
                           Imperfect" template. <head> loads wams.js + jQuery +
                           css/styles.css; end of <body> loads js/app.js
@@ -201,6 +237,10 @@ sources and `generatedwasm/` build output are not).
 
 ## Working in this repo — cautions
 
+- **The maintainer handles all Git/GitHub commits and pushes themselves.** Do
+  not run `git commit`, `git push`, or open PRs unless explicitly asked in that
+  moment — make and explain the edits, then leave staging/committing/pushing to
+  them. (HTTPS push auth isn't available from the agent shell here anyway.)
 - **Never open `data.cpp`, `bitapTest.cpp`, or the `*.json` data files in
   full** — they are multi-MB generated/embedded data. Read small ranges or
   grep if you must inspect them.
