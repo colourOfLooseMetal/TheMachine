@@ -1,15 +1,33 @@
+// ============================================================================
+//  wams.cpp - "Web Assembly Machine Searcher", the search engine for The Machine.
+//
+//  Fuzzy-matches a query against ~365,697 lowercase caption lines (mapTextData,
+//  defined in the generated data.cpp) and returns the best ~450 hits to the page.
+//
+//  Pipeline (all driven by cppSearch -> the extern "C" search() wasm export):
+//    Stage 1  SearchStringFuzzy    fuzzy Bitap filter, edit distance <= queryLen/2
+//    Stage 2  jaro_sliding_window  Jaro-style sliding-window scoring of survivors
+//    Stage 3  hashSortIndices      O(n) counting sort of the scores
+//    Return   Scores::to_json      pack top 450 as ["text",index,...]END000, then
+//                                  hand to JS by calling egg(json) via EM_ASM
+//
+//  Two build targets (see the emcc command at the very bottom of this file):
+//    - wasm:   the extern "C" search() export the web page calls through cwrap
+//    - native: egg.exe, a g++ debug build that runs main() (comment out the
+//              emscripten bits as noted near the Score/Scores classes)
+//
+//  Flip the global `cLog` (just below the includes) to true for per-search
+//  stdout/console tracing. searchTextLen (the corpus size) is defined in data.h.
+// ============================================================================
 #include <iostream>
-// using namespace std;
 #include <limits.h>
 #include "data.h"
 #include <string>
-// #include <cmath>
 #include <algorithm>
 #include <vector>
 #include <numeric>
 #include <map>
 #include <fstream>
-// #include <random>
 #include <chrono>
 #include <cctype>
 #include <bitset>
@@ -23,7 +41,6 @@
 using namespace std::chrono;
 const bool cLog = false; // console.log
 
-// const int searchTextLen = 365697;
 double scoresArr[searchTextLen];
 std::vector<int> sortedIndices(searchTextLen);
 
@@ -45,6 +62,11 @@ std::string escape_json(const std::string &s) {
     return o.str();
 }
 
+// Stage 3: counting sort. Fills `sortedIndices` with the line indices 0..n-1 ordered by
+// descending score (values[i] is the score for line i). O(n): count how many lines share
+// each distinct score, work out where each score's block begins in the sorted output, then
+// scatter each index into its slot. Also rewrites values[] into sorted order as a side
+// effect. The numbered steps below are the classic counting-sort recipe.
 void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 {
 	// 1. Create an empty hash table.
@@ -90,12 +112,6 @@ void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 		uniqueValCumulativeIndex += j->second;
 		// std::cout << j->first << " " << j->first << " " << j->second<< "\n";
 	}
-	// std::cout << "zoooop" << "\n";
-	// for (auto j = uniqueValToFirstSortedIndex.rbegin(); j != uniqueValToFirstSortedIndex.rend(); ++j)
-	// {
-	// 	std::cout << j->first << " " << j->first << " " << j->second<< "\n";
-	// }
-	// std::cout << "zeeeep" << "\n";
 	for (int i = 0; i < n; i++)
 	{
 		// if(values[i] > 0){
@@ -107,17 +123,7 @@ void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 		{
 		}
 	}
-	// std::cout << "pls" << "\n";
-	// for(int i = 0; i < n; i++){
-	// 	std::cout << sortedIndices[i] << "\n";
-	// }
-	// std::cout << "bopeeee" << "\n";
-	// std::map<int, int>::iterator it;
 	int index = 0;
-	// for (it = myMap.begin(); it != myMap.end(); ++it)
-	// {
-	// 	std::cout << it->first << ' ' << it->second;
-	// }
 
 	// 3. Consider all keys of hash table and sort them.
 	// In std::map, keys are already sorted.
@@ -135,7 +141,9 @@ void hashSortIndices(double values[], int n, std::vector<int> &sortedIndices)
 	}
 }
 
-// Utility function to print an array
+// Debug-only: dump the top 100 results (caption + score) in sorted order to stdout.
+// Only reached when cLog is true (see the gated call at the end of cppSearch).
+// overThreshCount is a leftover profiling tally of how many scores exceed 0.7.
 void printArray(double arr[], int n, std::vector<int> sortedIndices)
 {
 	int overThreshCount = 0;
@@ -219,6 +227,11 @@ double jaro_actual_search(const std::string s1, const std::string s2, int l1, in
 }
 
 /// s2 is pattern/query
+// The windowed scorer that jaro_sliding_window calls for each window position.
+// s1 = a slice of the caption line; s2 = the query padded with a leading/trailing space.
+// addedPatLen = how many padding spaces were added; extraSpaceLoc says where they are
+// (0 both / 1 prefix / 2 suffix) so matched padding can be discounted from the denominator.
+// Returns a score in [0,1]; see the worked 'hello' / 'hellzo' example inside the body.
 //so like i said earlier, guts are jaro (not jaro winkler)
 double jaro_actual_search_but_with_window_bs(const std::string s1, const std::string s2, int l1, int l2, int addedPatLen, int extraSpaceLoc, const int match_distance)
 {
@@ -340,6 +353,11 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 	return (score);
 }
 
+// Stage 2 entry point: score one caption line against the query (`pattern`).
+// If the line is longer than the query it slides a space-padded window across the line -
+// only near `matchIndex` (where Stage 1's bitap found a hit), not the whole line - scoring
+// each offset with jaro_actual_search_but_with_window_bs and keeping the best. If the line
+// is shorter than the query it just falls back to a single jaro_actual_search. Returns [0,1].
 double jaro_sliding_window(const std::string string, const int strLen, const std::string pattern, const int patLen, const int max_distance, int matchIndex)
 {
 
@@ -493,110 +511,71 @@ std::bitset<1000000> bitSetOfMatches;
 //the main search function
 void cppSearch(std::string query)
 {
-	// 	std::cout << "in a function" << std::endl;
-	// for (int i = 0; i < searchTextLen; i++)
-	// {
-	// 	if(i%1000 == 0){
-	// 		std::cout << mapTextData[i] << std::endl;
-	// 	}
-	// }
-	// std::cout << "eggstuff1"
-	// 		  << "\n";
-	// std::string query = "hello";
-	// vector<std::string> mapTextData = {"ayy hello there", "yeah hell of a", "helloasdaw", "hell. what a place", "hzello", "zhello", "helleo", "helol", "lehlo", "hello", "zhello", "helloz", "hellzowww", "hzellowww", "zzellowww", " hello "};
-	// std::cout << "eggstuffqedqwdwqd"
-	// 		  << "\n";
-	std::cout << query << "\n";
-	// cout<< sizeof(mapTextData) << " ";
-	// cout<< sizeof(mapTextData[0]) << " ";
-	// int loc = SearchString("The quick brown fox jumps over the lazy dog hello", "fox");
-	// std::cout << "the index is  " << loc;
-
-	// geeksforgeeks.org/c-bitset-and-its-application/
-
-	std::cout << searchTextLen << "\n";
+	if (cLog)
+		std::cout << query << "\n";
 
 	const int len = searchTextLen;
 
-	std::cout << len << "\n";
 	// this is the index the pattern is found in the string
 	std::vector<short int> matchIndex;
 	matchIndex.resize(1000000);
 	std::fill(matchIndex.begin(), matchIndex.end(), 0);
 
-	
-
-	std::cout << sizeof(matchIndex[0])*matchIndex.size() << "\n";
-	// std::cout << "shawtyInt " << matchIndex[0] << matchIndex[1000000-1] << "\n";
-
 	int queryLen = query.length();
 	// for leshacejkven search
 	int maxEditDist = queryLen / 2;
-	std::cout << "maxEditDist: " << maxEditDist << "\n";
-	std::cout << "now running fuzzy bitap"
-			  << "\n";
-	// int lesMatch = 0;
+	if (cLog)
+	{
+		std::cout << "maxEditDist: " << maxEditDist << "\n";
+		std::cout << "now running fuzzy bitap" << "\n";
+	}
+
+	// bitSetOfMatches is a global, so it MUST be cleared each search - otherwise lines that
+	// matched a PREVIOUS query stay flagged and leak into this query's scoring with stale data.
+	bitSetOfMatches.reset();
+
+	// Stage 1 - fuzzy bitap filter: flag every line within edit distance maxEditDist
 	for (int i = 0; i < len; i++)
 	{
 		short int singleMatchIdx = SearchStringFuzzy(mapTextData[i], query, maxEditDist);
-		// std::cout << singleMatchIdx << "\n";
 		if (singleMatchIdx != -1)
 		{
-			// std::cout << "\n" << "\n" << SearchStringFuzzy(mapTextData[i], query, maxEditDist) << "\n" << i << "\n";
 			bitSetOfMatches[i] = 1;
-			// lesMatch += 1;
 			matchIndex[i] = singleMatchIdx;
 		}
 	}
-	// std::cout << "lesmatch, 0 cause disabled but that was to run the bitap fuzzy search: " << lesMatch << "\n";
-	// int msl = queryLen;
-	// msl = std::max(msl, 6);
-	// const int match_distance = std::min(msl, 8) / 2 - 1; // min 2 max 3 //this can be calced once not each time
+
 	// lets just do 2, this is distance which swapped chars can get points for
 	const int match_distance = 2;
+	// Stage 2 - jaro sliding-window scoring of the filtered lines
 	for (int i = 0; i < len; i++)
 	{
 		if (bitSetOfMatches[i] == 1)
 		{
-			// std::cout << mapTextData[i] << "\n";
-			int textLen = strlen(mapTextData[i]);//length of string we are checking/number of characters
+			int textLen = strlen(mapTextData[i]); // length of string we are checking/number of characters
 			double score = jaro_sliding_window(mapTextData[i], textLen, query, queryLen, 2, matchIndex[i]); // 323ms"hello"
 			// score cutoff thresh, otherwise will just be 0
 			//  if (score > 0.5) the initial filtering kinda does this already in it's own way
 			{
 				// so the best non perfect match would be something like " hell o " since it has the chars and can do one swap to be there
 				// with these numbers, that kind of match would overtake a perfect "hello" match if the hello occured at index 50
-				// dosent really speed up but is cool//this int is like index/2 then index & 2, so instead of 0 1 2 3 4 5 6 we get
-				//                                                       0 1 1 2 2 3 3
-				// int mIndxModified = (matchIndex[i] >> 1) + (matchIndex[i] & 1);
-				// std::cout << "\n mindxModified" << mIndxModified << "\n";
 				double scoreWithIndex = score - matchIndex[i] * .002;
-				int resSize = textLen;//eachTextLen[i];//strlen(mapTextData[i]);//strlen(mapTextData[i]);//strlen for char array mapTextData[i].length(); for string
+				int resSize = textLen;
 				int lengthDiff = abs(resSize - queryLen);
-				// int lenDiffModified = (lengthDiff >> 1) + (lengthDiff & 1);
 				double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
-				// std::cout << "idx:" << i << " result:\"" << mapTextData[i] << "\" score:" << scoreWithIndexAndLength << "\n";
-				// std::cout << "matchIndx:" << matchIndex[i] << " resultlength:" << strlen(mapTextData[i]) << " stringDiffLength:" << lengthDiff << "\n";
-				// std::cout << "initial fuzzy Score:         " << score << "\n";
-				// std::cout << "score w match index:         " << scoreWithIndex << "\n";
-				// std::cout << "score w index & length diff: " << scoreWithIndexAndLength<< "\n" << "\n";
 				scoresArr[i] = scoreWithIndexAndLength;
 			}
 		}
 	}
-	std::cout << " \n";
-	
-	std::cout << "sorting"
-			  << "\n";
-	std::cout << sizeof(scoresArr) / sizeof(scoresArr[0]) << "\n";
-	std::cout << len << "\n";
 
+	// Stage 3 - counting sort of all scores into sortedIndices
 	hashSortIndices(scoresArr, len, sortedIndices);
 
-	std::cout << "Sorted array is\n";
-	printArray(scoresArr, len, sortedIndices);
-
-
+	if (cLog)
+	{
+		std::cout << "Sorted array is\n";
+		printArray(scoresArr, len, sortedIndices);
+	}
 }
 
 //classes to hold score info to make passing back to js easier, score is as you see the score index, and the text of the string, we dont actually pass a score back... awkward lol
