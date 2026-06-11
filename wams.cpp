@@ -7,15 +7,21 @@
 //
 //  Pipeline (all driven by cppSearch -> the extern "C" search() wasm export):
 //    Stage 1  SearchStringFuzzy    fuzzy Bitap filter, edit distance <= queryLen/2
+//                                  (pattern mask + R rows are prepped ONCE per search
+//                                  in cppSearch, not per line - that prep used to be
+//                                  most of stage 1's cost). Hits go into g_survivors.
 //    Stage 2  jaro_sliding_window  Jaro-style sliding-window scoring of survivors
-//    Stage 3  hashSortIndices      O(n) counting sort of the scores
+//    Stage 3  partial_sort         sorts just the survivors for the top 450
+//                                  (replaced hashSortIndices, the old counting sort
+//                                  over ALL g_totalLines scores)
 //    Return   Scores::to_json      pack top 450 as ["text",index,...]END000, then
 //                                  hand to JS by calling egg(json) via EM_ASM
 //
 //  Two build targets (see the emcc command at the very bottom of this file):
 //    - wasm:   the extern "C" search() export the web page calls through cwrap
-//    - native: egg.exe, a g++ debug build that runs main() (comment out the
-//              emscripten bits as noted near the Score/Scores classes)
+//    - native: a g++ debug build that runs main() - the emscripten bits are behind
+//              #ifdef __EMSCRIPTEN__ now, so plain `g++ -O3 wams.cpp` just works.
+//              Usage: ./a.out "<query>" data/sm.txt [more .txt ...]
 //
 //  Flip the global `cLog` (just below the includes) to true for per-search
 //  stdout/console tracing. Corpus size is g_totalLines (set as shows are loaded).
@@ -31,7 +37,9 @@
 #include <chrono>
 #include <cctype>
 
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#endif
 #include <cstring>
 
 #include <sstream>
@@ -50,21 +58,24 @@ int                   g_totalLines = 0;
 
 inline const char* lineAt(int i) { return g_corpus.data() + g_lineOffsets[i]; }
 
-// ---- Work arrays (resized once when corpus size changes, before each search) -
-std::vector<double>   scoresArr;
-std::vector<int>      sortedIndices;
-std::vector<uint8_t>  g_bitSet;     // replaces fixed bitSetOfMatches
-std::vector<short>    g_matchIndex; // replaces local matchIndex in cppSearch
-
-static int s_workArrayLen = 0;
-static void ensureWorkArrays(int n) {
-    if (s_workArrayLen == n) return;
-    scoresArr.assign(n, 0.0);
-    sortedIndices.assign(n, 999);
-    g_bitSet.assign(n, 0);
-    g_matchIndex.assign(n, 0);
-    s_workArrayLen = n;
+// Line length without strlen: lines are packed back to back, so it's just the gap to the
+// next offset minus the '\0' (the last line ends at the end of the corpus).
+inline int lineLen(int i) {
+    size_t end = (i + 1 < g_totalLines) ? (size_t)g_lineOffsets[i + 1] : g_corpus.size();
+    return (int)(end - g_lineOffsets[i] - 1);
 }
+
+// ---- Per-search survivor list ------------------------------------------------
+// Replaces the old full-corpus work arrays (scoresArr/sortedIndices/g_bitSet/
+// g_matchIndex) - those needed ~5MB of fills per search and a counting sort over
+// every line. Stage 1 pushes one entry per bitap hit, stage 2 fills in the score,
+// stage 3 partial_sorts just these.
+struct Survivor {
+    int    line;     // index into g_lineOffsets
+    short  matchIdx; // where in the line stage 1's bitap found the hit
+    double score;    // filled in by stage 2
+};
+std::vector<Survivor> g_survivors;
 
 // ---- Corpus management exports (called from JS) ------------------------------
 
@@ -114,8 +125,8 @@ extern "C" int commitShow(int byteLen) {
 extern "C" void clearCorpus() {
     std::string().swap(g_corpus);
     std::vector<uint32_t>().swap(g_lineOffsets);
+    std::vector<Survivor>().swap(g_survivors);
     g_totalLines = 0;
-    s_workArrayLen = 0; // force work-array resize on next search
 }
 
 auto start = high_resolution_clock::now();
@@ -123,125 +134,53 @@ auto start = high_resolution_clock::now();
 
 
 //escape special characters in json string so we dont reach unexpected end of file
+//(builds straight into a plain string now - the old per-result ostringstream was slow)
 std::string escape_json(const std::string &s) {
-    std::ostringstream o;
+    static const char* hexDigits = "0123456789abcdef";
+    std::string o;
+    o.reserve(s.size());
     for (auto c = s.cbegin(); c != s.cend(); c++) {
-        if (*c == '"' || *c == '\\' || ('\x00' <= *c && *c <= '\x1f')) {
-            o << "\\u"
-              << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(*c);
+        unsigned char u = (unsigned char)*c;
+        if (u == '"' || u == '\\' || u <= 0x1f) {
+            o += "\\u00";
+            o += hexDigits[u >> 4];
+            o += hexDigits[u & 0xf];
         } else {
-            o << *c;
+            o += (char)u;
         }
     }
-    return o.str();
+    return o;
 }
 
-// Stage 3: counting sort. Fills `sortedIndices` with the line indices 0..n-1 ordered by
-// descending score (values[i] is the score for line i). O(n): count how many lines share
-// each distinct score, work out where each score's block begins in the sorted output, then
-// scatter each index into its slot. Also rewrites values[] into sorted order as a side
-// effect. The numbered steps below are the classic counting-sort recipe.
-void hashSortIndices(std::vector<double> &values, int n, std::vector<int> &sortedIndices)
-{
-	// 1. Create an empty hash table.
-	std::map<double, int> numsAndCounts;
-
-	// std::cout << "\n";
-	// 2. Input array values are stores as key and their
-	// counts are stored as value in hash table.
-
-	// for the list 100, 12, 100, 1, 1, 12, 100, 1, 12, 100, 1, 1
-	// this would make the map 100: 4  12: 3 1: 5
-	for (int i = 0; i < n; i++)
-	{
-		numsAndCounts[values[i]]++;
-		// if(values[i] > 1){
-		// 	std::cout << i << " ," << values[i] << mapTextData[i] << "\n";
-		// }
-	}
-
-	// std::cout << "bopoooo number of unique scores  " << numsAndCounts.size() << "\n";
-	int numOfEachUniqueVal[numsAndCounts.size()];
-	int uniqueValCounter[numsAndCounts.size()];
-	// double uniqueVals[numsAndCounts.size()];
-	int jIter = 0;
-	// std::map<int, int>::iterator j;
-	for (auto j = numsAndCounts.rbegin(); j != numsAndCounts.rend(); ++j)
-	{
-		numOfEachUniqueVal[jIter] = j->second;
-		uniqueValCounter[jIter] = 0;
-		// std::cout << j->first << " " << j->first << " " << j->second<< "\n";
-		jIter += 1;
-	}
-	// ok hear me out here
-	// if we know there are like 10 with a score of 1, then 8 with a score of 0.95 then 3 with a score of 0.9
-	// we know the first 1 will be at index 0 obvs the first 0.95 will be at 11 and first 0.9 will be at index 21
-	// so map the values to the index, and increment numofeachuniqueval down each time you add one
-
-	std::map<double, int> uniqueValToFirstSortedIndex;
-	int uniqueValCumulativeIndex = 0;
-	for (auto j = numsAndCounts.rbegin(); j != numsAndCounts.rend(); ++j)
-	{
-		uniqueValToFirstSortedIndex[j->first] = uniqueValCumulativeIndex;
-		uniqueValCumulativeIndex += j->second;
-		// std::cout << j->first << " " << j->first << " " << j->second<< "\n";
-	}
-	for (int i = 0; i < n; i++)
-	{
-		// if(values[i] > 0){
-		// std::cout << i << " " << uniqueValToFirstSortedIndex[values[i]] << "  " << values[i] << "\n";
-		// }
-		sortedIndices[uniqueValToFirstSortedIndex[values[i]]] = i;
-		uniqueValToFirstSortedIndex[values[i]] += 1;
-		if (values[i] > 0)
-		{
-		}
-	}
-	int index = 0;
-
-	// 3. Consider all keys of hash table and sort them.
-	// In std::map, keys are already sorted.
-
-	// 4. Traverse all sorted keys and print every key its value times.
-	for (auto it = numsAndCounts.rbegin(); it != numsAndCounts.rend(); ++it)
-	{
-		while (it->second--)
-		{
-			// if(it->first > .5){
-			// // std::cout << it->first << " : " << it->second << "index" << index << "\n";
-			// }
-			values[index++] = it->first;
-		}
-	}
-}
+// (hashSortIndices, the O(n) counting sort over every line's score, used to live here.
+// It's gone - stage 3 is now a partial_sort over just the survivors at the end of
+// cppSearch, so there's nothing to sort for the ~99% of lines the bitap filtered out.)
 
 // Debug-only: dump the top 100 results (caption + score) in sorted order to stdout.
 // Only reached when cLog is true (see the gated call at the end of cppSearch).
-// overThreshCount is a leftover profiling tally of how many scores exceed 0.7.
-void printArray(std::vector<double>& arr, int n, std::vector<int> sortedIndices)
+void printArray(int topN)
 {
-	int overThreshCount = 0;
-	for (int i = 0; i < n; i++)
+	for (int i = 0; i < topN && i < 100; i++)
 	{
-		if (arr[i] > 0.7)
-		{
-			overThreshCount++;
-		}
-		if (i < 100)
-		{
-			std::cout << lineAt(sortedIndices[i]) << " " << arr[i] << "\n"; // " idx " << i << " " << lineAt(i) << "\n";
-			std::cout << "\n";
-		}
+		std::cout << lineAt(g_survivors[i].line) << " " << g_survivors[i].score << "\n";
+		std::cout << "\n";
 	}
-	// std::cout << "\n over Thresh count: " << overThreshCount; // 1555 450-380 ms print if i < 100 "hello"
-
-	// std::cout << "\n";
 }
+
+// The query padded with spaces, built ONCE per search in cppSearch. The sliding window
+// used to rebuild " "+query+" " (and substr the line) on every single slide step.
+struct PaddedQuery {
+	std::string q;    // the raw query
+	std::string pre;  // " " + q
+	std::string suf;  // q + " "
+	std::string both; // " " + q + " "
+};
 
 // so this isnt the jaro algoritim, and this isnt the sliding window search, this gets called when the query is longer than the text we are searching, it wouldnt be a bad idea to slide the searched text over the query
 //i guess the same way we slide the query over the searched text in the next function, ill explain the scoring in the next function, i dont actually know how all of this function works lol, i mean i kinda do, but the guts are jaro
 //and then i change the scoring
-double jaro_actual_search(const std::string s1, const std::string s2, int l1, int l2, const int match_distance)
+//(s1/s2 are raw pointers now - only the first l1/l2 chars are read, no copies)
+double jaro_actual_search(const char* s1, const char* s2, int l1, int l2, const int match_distance)
 {
 	if (l1 == 0)
 	{
@@ -271,8 +210,6 @@ double jaro_actual_search(const std::string s1, const std::string s2, int l1, in
 	// if (matches == 0)
 	// 	return 0.0;
 	double t = 0.0;
-	double tAct = 0.0;
-	int k = 0;
 	for (int i = 0; i < l1; i++)
 		if (s1_matches[i])
 		{
@@ -302,17 +239,18 @@ double jaro_actual_search(const std::string s1, const std::string s2, int l1, in
 
 /// s2 is pattern/query
 // The windowed scorer that jaro_sliding_window calls for each window position.
-// s1 = a slice of the caption line; s2 = the query padded with a leading/trailing space.
+// s1 = a slice of the caption line (raw pointer into g_corpus, NOT null-terminated at l1,
+// only the first l1 chars are valid); s2 = the query padded with a leading/trailing space.
 // addedPatLen = how many padding spaces were added; extraSpaceLoc says where they are
 // (0 both / 1 prefix / 2 suffix) so matched padding can be discounted from the denominator.
 // Returns a score in [0,1]; see the worked 'hello' / 'hellzo' example inside the body.
 //so like i said earlier, guts are jaro (not jaro winkler)
-double jaro_actual_search_but_with_window_bs(const std::string s1, const std::string s2, int l1, int l2, int addedPatLen, int extraSpaceLoc, const int match_distance)
+double jaro_actual_search_but_with_window_bs(const char* s1, const char* s2, int l1, int l2, int addedPatLen, int extraSpaceLoc, const int match_distance)
 {
 	if (cLog)
 	{
-		std::cout << ":" << s2 << ":"
-				  << ":" << s1 << ":" << l1 << "," << l2 << "\n";
+		std::cout << ":" << std::string(s2, l2) << ":"
+				  << ":" << std::string(s1, l1) << ":" << l1 << "," << l2 << "\n";
 	}
 
 	if (l1 == 0)
@@ -372,9 +310,6 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 	// extraSpaceLoc is 0 for before and after 1 for prefix 2 for suffix
 	if (extraSpaceLoc == 2)
 	{
-		// std::cout << addedPatLen << l1-1 << s2[3] ;
-		// std::cout << "hi jesse" << ":" << s2[l1-1] << ":" << s1[l1-1] << ":" << "\n";
-		// std::cout << s1 << ":" << s2 << "\n";
 		//if the extra spaces do match, we dont consider the extra string length when scoring, what this does is
 		//subtract 1 from added pat len, the full pattern length with the padded spaces is l2,
 		//so if we had 'hello' as a query and ' hello ' as search text, we would pad with spaces when  we reach 2nd index while sliding in the outer function,
@@ -427,28 +362,22 @@ double jaro_actual_search_but_with_window_bs(const std::string s1, const std::st
 	return (score);
 }
 
-// Stage 2 entry point: score one caption line against the query (`pattern`).
-// If the line is longer than the query it slides a space-padded window across the line -
+// Stage 2 entry point: score one caption line against the query (`pq`, padded once per
+// search). If the line is longer than the query it slides a window across the line -
 // only near `matchIndex` (where Stage 1's bitap found a hit), not the whole line - scoring
-// each offset with jaro_actual_search_but_with_window_bs and keeping the best. If the line
-// is shorter than the query it just falls back to a single jaro_actual_search. Returns [0,1].
-double jaro_sliding_window(const std::string string, const int strLen, const std::string pattern, const int patLen, const int max_distance, int matchIndex)
+// each offset with jaro_actual_search_but_with_window_bs and keeping the best. The window
+// is just a pointer offset into the line now (the old substr/`" "+s2+" "` per step was a
+// pile of allocations); the maths inside the scorer is unchanged. If the line is shorter
+// than the query it just falls back to a single jaro_actual_search. Returns [0,1].
+double jaro_sliding_window(const char* string, const int strLen, const PaddedQuery &pq, const int patLen, const int max_distance, int matchIndex)
 {
-
-	// const int strLen = string.length();
-	// std::cout << "\n" << "\n" << ":" << pattern << ":" <<  "  main " << ":" << string << ":" << "\n";
-	// int w;
-	// w = getc(stdin);
 	const int l2 = patLen;
-	const std::string s2 = pattern;
 	double maxScore = 0;
 	double score = 0;
-	int maxScoreIndex = 0;
 	// if the string is longer than the query(pattern) do a sliding window search
 	// ok so right now if we search hello and have the strings zzello and hzello they will score the same since the query can
 	// only match the length of hello, im thinking that we add spaces before and after as we slide it, but remove the leading space when e is 0
 	// and the trailing space when we are at the last window position
-	std::string s1 = "";
 	if (strLen > patLen)
 	{
 		int strIndexStart = std::max(0, matchIndex - 1);
@@ -456,37 +385,31 @@ double jaro_sliding_window(const std::string string, const int strLen, const std
 		for (int e = strIndexStart; e <= strIndexEnd; e++)
 		{
 			// extraSpaceLoc is 0 for before and after 1 for prefix 2 for suffix
+			// (window slices below never run off the line: strLen > patLen bounds them)
 			if (e == 0)
 			{
-				s1 = string.substr(e, l2 + 1);
-				// std::cout << "e0" << ":" << s1 << ":" << "\n";
-				score = jaro_actual_search_but_with_window_bs(s1, s2 + " ", s1.length(), l2 + 1, 1, 2, max_distance);
+				score = jaro_actual_search_but_with_window_bs(string, pq.suf.c_str(), l2 + 1, l2 + 1, 1, 2, max_distance);
 			}
 			else if (e == strLen - patLen)
 			{
-				s1 = string.substr(e - 1, l2 + 1);
-				// std::cout << "esl-pl" << ":" << s1 << ":" << "\n";
-				score = jaro_actual_search_but_with_window_bs(s1, " " + s2, s1.length(), l2 + 1, 1, 1, max_distance);
+				score = jaro_actual_search_but_with_window_bs(string + e - 1, pq.pre.c_str(), l2 + 1, l2 + 1, 1, 1, max_distance);
 			}
 			else
 			{
-				s1 = string.substr(e - 1, l2 + 2);
-				// std::cout << "e-else-mid " << e << " l2patlen :" << l2 << ":" << s1 << ":" << string.substr(e - 1, e + l2 + 1) << ":" << "\n";
-				score = jaro_actual_search_but_with_window_bs(s1, " " + s2 + " ", s1.length(), l2 + 2, 2, 0, max_distance);
+				score = jaro_actual_search_but_with_window_bs(string + e - 1, pq.both.c_str(), l2 + 2, l2 + 2, 2, 0, max_distance);
 			}
 
 			// std::cout << score;
 			if (score > maxScore)
 			{
 				maxScore = score;
-				maxScoreIndex = e;
 			}
 		}
 	}
 	// otherwise just straight up compare
 	else
 	{
-		score = jaro_actual_search(string, pattern, strLen, patLen, max_distance);
+		score = jaro_actual_search(string, pq.q.c_str(), strLen, patLen, max_distance);
 		return score;
 	}
 	return maxScore;
@@ -530,53 +453,37 @@ static int SearchString(std::string stringIn, std::string pattern)
 //this is levenshtein distance usiong bitap, it is much faster than the jaro sliding alternative above
 //so we use it to filter, since if there isnt a decent levenshtein distance match there wont be a match at all, but the scoring is too limited so im not using this for that just
 //a step along the way
-static short int SearchStringFuzzy(std::string text, std::string pattern, int k)
+//
+//the pattern-only setup (patternMask, the R rows, the m>31 / empty checks) lives in
+//cppSearch now and is done ONCE per search - this used to copy both strings, heap-allocate
+//R, and rebuild the whole mask table for every single line, which was most of stage 1's
+//runtime. text is indexed as unsigned char so a non-ascii byte can't index off the table.
+static short int SearchStringFuzzy(const char *text, const unsigned long *patternMask, unsigned long *R, int m, int k)
 {
-	int result = -1;
-	int m = pattern.size();
-	unsigned long *R;
-	unsigned long patternMask[CHAR_MAX + 1];
 	int i, d;
-
-	if (pattern[0] == '\0')
-		return 0;
-	if (m > 31)
-		return -1; // Error: The pattern is too long!
-
-	R = new unsigned long[(k + 1) * sizeof *R];
 	for (i = 0; i <= k; ++i)
 		R[i] = ~1;
-
-	for (i = 0; i <= CHAR_MAX; ++i)
-		patternMask[i] = ~0;
-
-	for (i = 0; i < m; ++i)
-		patternMask[pattern[i]] &= ~(1UL << i);
 
 	for (i = 0; text[i] != '\0'; ++i)
 	{
 		unsigned long oldRd1 = R[0];
+		unsigned long mask = patternMask[(unsigned char)text[i]];
 
-		R[0] |= patternMask[text[i]];
+		R[0] |= mask;
 		R[0] <<= 1;
 
 		for (d = 1; d <= k; ++d)
 		{
 			unsigned long tmp = R[d];
 
-			R[d] = (oldRd1 & (R[d] | patternMask[text[i]])) << 1;
+			R[d] = (oldRd1 & (R[d] | mask)) << 1;
 			oldRd1 = tmp;
 		}
 
 		if (0 == (R[k] & (1UL << m)))
-		{
-			result = (i - m) + 1;
-			break;
-		}
+			return (short)((i - m) + 1);
 	}
-	// std::cout << text << ":" << pattern << ":" << result << "\n";
-	free(R);
-	return result;
+	return -1;
 }
 
 //the main search function
@@ -586,12 +493,7 @@ void cppSearch(std::string query)
 		std::cout << query << "\n";
 
 	const int len = g_totalLines;
-
-	// Resize work arrays if corpus changed since last search; reset per-search state.
-	ensureWorkArrays(len);
-	// g_bitSet and g_matchIndex must be cleared each search so previous results don't leak.
-	std::fill(g_bitSet.begin(), g_bitSet.end(), 0);
-	std::fill(g_matchIndex.begin(), g_matchIndex.end(), 0);
+	g_survivors.clear();
 
 	int queryLen = query.length();
 	// for leshacejkven search
@@ -602,68 +504,93 @@ void cppSearch(std::string query)
 		std::cout << "now running fuzzy bitap" << "\n";
 	}
 
-	// Stage 1 - fuzzy bitap filter: flag every line within edit distance maxEditDist
-	for (int i = 0; i < len; i++)
+	// Stage 1 - fuzzy bitap filter: flag every line within edit distance maxEditDist.
+	// All the query-only prep (mask table, R rows) happens here, once, instead of per line.
+	if (queryLen == 0)
 	{
-		short int singleMatchIdx = SearchStringFuzzy(lineAt(i), query, maxEditDist);
-		if (singleMatchIdx != -1)
-		{
-			g_bitSet[i] = 1;
-			g_matchIndex[i] = singleMatchIdx;
-		}
+		// empty pattern matches everything at offset 0 (same early-out the old per-line code had)
+		for (int i = 0; i < len; i++)
+			g_survivors.push_back({i, 0, 0.0});
 	}
-
-	// lets just do 2, this is distance which swapped chars can get points for
-	const int match_distance = 2;
-	// Stage 2 - jaro sliding-window scoring of the filtered lines
-	for (int i = 0; i < len; i++)
+	else if (queryLen <= 31) // bitap patterns are capped at 31 chars (known rough edge)
 	{
-		if (g_bitSet[i])
+		unsigned long patternMask[256]; // indexed by unsigned char
+		for (int i = 0; i < 256; ++i)
+			patternMask[i] = ~0;
+		for (int i = 0; i < queryLen; ++i)
+			patternMask[(unsigned char)query[i]] &= ~(1UL << i);
+
+		std::vector<unsigned long> R(maxEditDist + 1);
+		// a line shorter than this can't possibly contain a match, skip it without scanning
+		const int minLen = queryLen - maxEditDist;
+
+		for (int i = 0; i < len; i++)
 		{
-			int textLen = strlen(lineAt(i)); // length of string we are checking/number of characters
-			double score = jaro_sliding_window(lineAt(i), textLen, query, queryLen, 2, g_matchIndex[i]); // 323ms"hello"
-			// score cutoff thresh, otherwise will just be 0
-			//  if (score > 0.5) the initial filtering kinda does this already in it's own way
+			if (lineLen(i) < minLen)
+				continue;
+			short int singleMatchIdx = SearchStringFuzzy(lineAt(i), patternMask, R.data(), queryLen, maxEditDist);
+			if (singleMatchIdx != -1)
 			{
-				// so the best non perfect match would be something like " hell o " since it has the chars and can do one swap to be there
-				// with these numbers, that kind of match would overtake a perfect "hello" match if the hello occured at index 50
-				double scoreWithIndex = score - g_matchIndex[i] * .002;
-				int resSize = textLen;
-				int lengthDiff = abs(resSize - queryLen);
-				double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
-				scoresArr[i] = scoreWithIndexAndLength;
+				g_survivors.push_back({i, singleMatchIdx, 0.0});
 			}
 		}
 	}
+	// queryLen > 31: bitap can't handle it (old code returned -1 per line) -> no survivors
 
-	// Stage 3 - counting sort of all scores into sortedIndices
-	hashSortIndices(scoresArr, len, sortedIndices);
+	// lets just do 2, this is distance which swapped chars can get points for
+	const int match_distance = 2;
+	// pad the query once for the sliding window (was re-padded on every slide step)
+	PaddedQuery pq;
+	pq.q = query;
+	pq.pre = " " + query;
+	pq.suf = query + " ";
+	pq.both = " " + query + " ";
+
+	// Stage 2 - jaro sliding-window scoring of the filtered lines
+	for (Survivor &s : g_survivors)
+	{
+		int textLen = lineLen(s.line); // length of string we are checking/number of characters
+		double score = jaro_sliding_window(lineAt(s.line), textLen, pq, queryLen, 2, s.matchIdx);
+		// so the best non perfect match would be something like " hell o " since it has the chars and can do one swap to be there
+		// with these numbers, that kind of match would overtake a perfect "hello" match if the hello occured at index 50
+		double scoreWithIndex = score - s.matchIdx * .002;
+		int resSize = textLen;
+		int lengthDiff = abs(resSize - queryLen);
+		double scoreWithIndexAndLength = scoreWithIndex - (lengthDiff * 0.0005);
+		s.score = scoreWithIndexAndLength;
+	}
+
+	// Stage 3 - partial_sort just the survivors for the top 450 (desc score; ties keep
+	// ascending line order, which is what the old counting sort produced too)
+	int topN = std::min((int)g_survivors.size(), 450);
+	std::partial_sort(g_survivors.begin(), g_survivors.begin() + topN, g_survivors.end(),
+		[](const Survivor &a, const Survivor &b) {
+			if (a.score != b.score)
+				return a.score > b.score;
+			return a.line < b.line;
+		});
 
 	if (cLog)
 	{
 		std::cout << "Sorted array is\n";
-		printArray(scoresArr, len, sortedIndices);
+		printArray(topN);
 	}
 }
 
 //classes to hold score info to make passing back to js easier, score is as you see the score index, and the text of the string, we dont actually pass a score back... awkward lol
 //might eventually but eh
 //the index is from our combined list obvs and is used js side to find the index of the image in the set
-
-// comment out here to before main for normal compile
 class Score {
   public:
     std::string to_json();
     std::string text;
     int index;
-//   private:
-//     std::string format(std::string name, std::string value);
 };
 
 class Scores {
   public:
-    char* to_json();
-    void add_Score(std::string text, int index);
+    std::string to_json();
+    void add_Score(const std::string &text, int index);
 
   private:
     std::vector<Score> _Scores;
@@ -673,11 +600,7 @@ std::string Score::to_json() {
   return "\"" + text + "\"" + "," + std::to_string(index);
 }
 
-// std::string Score::format(std::string name, std::string val) {
-//   return "\"" + name + "\":" + "\"" + val + "\"";
-// }
-
-void Scores::add_Score(std::string text, int index)
+void Scores::add_Score(const std::string &text, int index)
 {
   Score f;
   f.text = escape_json(text);
@@ -686,11 +609,16 @@ void Scores::add_Score(std::string text, int index)
   _Scores.push_back(f);
 }
 
-char* Scores::to_json() {
+// builds the whole payload in one std::string now - the old version strcpy'd into a
+// new char[json.length()] (one byte short for the '\0', oops) and leaked the mismatch
+// to delete. the caller just hands json.c_str() to EM_ASM, no copy needed.
+std::string Scores::to_json() {
 
-  std::string json = "[";
+  std::string json;
+  json.reserve(_Scores.size() * 48 + 16); // rough per-result guess, just avoids regrows
+  json += "[";
 
-  for(int i = 0; i < _Scores.size(); i++)
+  for(size_t i = 0; i < _Scores.size(); i++)
   {
     json += _Scores[i].to_json();
 
@@ -702,52 +630,73 @@ char* Scores::to_json() {
 
   json += "]END000";
 
-  char* char_array = new char[json.length()]();
-  strcpy(char_array, json.c_str());
-
-  return char_array;
+  return json;
 }
 
 extern "C" void search(char * query) {
   cppSearch(query);
   Scores Scores;
-  int topN = std::min(450, g_totalLines);
+  // only real bitap survivors come back now - when fewer than 450 lines match, the old
+  // code padded the payload out to 450 with zero-score junk lines
+  int topN = std::min((int)g_survivors.size(), 450);
   for (int i = 0; i < topN; i++)
 	{
-		Scores.add_Score(lineAt(sortedIndices[i]), sortedIndices[i]);
+		Scores.add_Score(lineAt(g_survivors[i].line), g_survivors[i].line);
 	}
-  char* json = Scores.to_json();
+  std::string json = Scores.to_json();
 
+#ifdef __EMSCRIPTEN__
     EM_ASM({
     // console.log(UTF8ToString($0));
     egg(UTF8ToString($0));
     // e.data = UTF8ToString($0);
-}, json);
-  delete json;
-	// Reset work arrays for the next search.
-	std::fill(scoresArr.begin(), scoresArr.end(), 0.0);
-	std::fill(sortedIndices.begin(), sortedIndices.end(), 999);
+}, json.c_str());
+#else
+  (void)json; // native build: main() below prints results itself
+#endif
 }
 
 
-int main()
+int main(int argc, char** argv)
 {
-	// Native egg.exe debug path: load a .txt corpus file, then search.
-	// For wasm the loading is done from JS; here we drive it directly.
-	// Uncomment the block below and supply a small <show>.txt next to egg.exe.
-	//
-	// std::ifstream f("sm_test.txt", std::ios::binary | std::ios::ate);
-	// auto sz = (int)f.tellg(); f.seekg(0);
-	// reserveCorpus(sz, 100000);
-	// char* ptr = showWritePtr(sz);
-	// f.read(ptr, sz);
-	// int added = commitShow(sz);
-	// std::cout << "loaded " << added << " lines, total=" << g_totalLines << "\n";
-	// start = high_resolution_clock::now();
-	// cppSearch("hello");
-	// auto end = high_resolution_clock::now();
-	// duration<double, std::milli> diff = end - start;
-	// std::cout << diff.count() << " ms\n";
+#ifndef __EMSCRIPTEN__
+	// Native debug/test path: load .txt corpora through the same exports JS uses,
+	// run one search, print "index<TAB>score<TAB>caption" for the top 450.
+	//   g++ -O3 wams.cpp -o wams && ./wams "hello" data/sm.txt data/recess.txt
+	if (argc < 3)
+	{
+		std::cerr << "usage: " << argv[0] << " \"<query>\" <show.txt> [more .txt ...]\n";
+		return 1;
+	}
+	long totalBytes = 0;
+	std::vector<std::string> bufs;
+	for (int a = 2; a < argc; a++)
+	{
+		std::ifstream f(argv[a], std::ios::binary);
+		if (!f) { std::cerr << "can't open " << argv[a] << "\n"; return 1; }
+		std::string b((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+		totalBytes += (long)b.size();
+		bufs.push_back(std::move(b));
+	}
+	reserveCorpus((int)totalBytes, 400000);
+	for (std::string &b : bufs)
+	{
+		char* ptr = showWritePtr((int)b.size());
+		memcpy(ptr, b.data(), b.size());
+		commitShow((int)b.size());
+	}
+	std::cerr << "loaded " << g_totalLines << " lines\n";
+	start = high_resolution_clock::now();
+	cppSearch(argv[1]);
+	auto end = high_resolution_clock::now();
+	duration<double, std::milli> diff = end - start;
+	std::cerr << diff.count() << " ms\n";
+	int topN = std::min((int)g_survivors.size(), 450);
+	for (int i = 0; i < topN; i++)
+	{
+		printf("%d\t%.17g\t%s\n", g_survivors[i].line, g_survivors[i].score, lineAt(g_survivors[i].line));
+	}
+#endif
 	return 0;
 }
 

@@ -155,9 +155,31 @@
 	// search() rebuilds the corpus before searching if this is set, then clears it.
 	var corpusDirty = true;
 
+	// Mobile detection (same regex as the soft-keyboard workaround in the Enter handler),
+	// hoisted up here because the prefetch decision below needs it at parse time.
+	var g_isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+	// Fetch every show's .txt in parallel (they used to download one at a time).
+	// Resolves to an array of ArrayBuffers in the same order as `shows`.
+	function fetchShows(shows) {
+		return Promise.all(shows.map(function(s) {
+			return fetch(s.file).then(function(r) { return r.arrayBuffer(); });
+		}));
+	}
+
+	// Kick the downloads off at parse time, NOT inside onRuntimeInitialized — the manifest
+	// (and on desktop the whole corpus) downloads in parallel with the wasm compile instead
+	// of after it. Committing into wasm memory still waits for the runtime, of course.
+	var g_manifestPromise = fetch('manifest.json').then(function(r) { return r.json(); });
+	// Desktop default is "all shows checked", so prefetch everything; mobile starts with
+	// nothing checked, so there's nothing worth prefetching.
+	var g_eagerBuffersPromise = g_isMobile ? null : g_manifestPromise.then(function(m) { return fetchShows(m); });
+
 	// Load the selected shows into the wasm corpus (one copy into C++ memory; no JS-side cache).
 	// selectedShows: array of manifest entries in the order they should be loaded.
-	async function loadSelection(selectedShows) {
+	// prefetched: optional promise of their ArrayBuffers (the eager startup path passes
+	// g_eagerBuffersPromise); when absent the fetches start here, all in parallel.
+	async function loadSelection(selectedShows, prefetched) {
 		loadStart();
 		document.getElementById("txt-search").disabled = true;
 
@@ -167,12 +189,14 @@
 		var totalLines = selectedShows.reduce(function(a, s) { return a + s.lines; }, 0);
 		Module._reserveCorpus(totalBytes, totalLines); // exact alloc; no realloc during the loop below
 
+		var buffers = await (prefetched || fetchShows(selectedShows));
+
 		loadedShows = [];
 		var start = 0;
 		for (var si = 0; si < selectedShows.length; si++) {
 			var s = selectedShows[si];
-			var resp = await fetch(s.file);
-			var u8 = new Uint8Array(await resp.arrayBuffer()); // transient — released after HEAPU8.set
+			var u8 = new Uint8Array(buffers[si]); // transient — released after HEAPU8.set
+			buffers[si] = null;                   // drop our ref so each buffer can GC as we go
 			var ptr = Module._showWritePtr(u8.length);        // pointer into g_corpus
 			Module.HEAPU8.set(u8, ptr);                       // the ONE copy into wasm memory
 			var added = Module._commitShow(u8.length);         // index in place; u8 is now GC-able
@@ -189,11 +213,8 @@
 	Module.onRuntimeInitialized = async function() {
 		console.log("ayy we in");
 
-		// Fetch manifest (single source of truth for show order, line counts, byte sizes).
-		g_manifest = await (await fetch('manifest.json')).json();
-
-		// Determine mobile default: detect by UA, same regex already used elsewhere in app.js.
-		var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+		// Manifest fetch started at parse time (g_manifestPromise above); usually done by now.
+		g_manifest = await g_manifestPromise;
 
 		// Build show-selection checkboxes from manifest (so adding a show needs no HTML edit).
 		// Desktop: all checked. Mobile: all unchecked — corpus loads on first search.
@@ -205,7 +226,7 @@
 			input.type = 'checkbox';
 			input.className = 'show-checkbox';
 			input.id = 'show-' + show.key;
-			input.checked = !isMobile;
+			input.checked = !g_isMobile;
 			var label = document.createElement('label');
 			label.htmlFor = 'show-' + show.key;
 			label.textContent = show.name;
@@ -225,11 +246,17 @@
 			return cb && cb.checked;
 		});
 		if (initialSelected.length > 0) {
-			await loadSelection(initialSelected);
+			// The eager prefetch covers ALL shows in manifest order; only hand it over if the
+			// initial selection still matches (a checkbox can't realistically change before
+			// the runtime is up, but a stale prefetch here would misalign buffers vs shows).
+			var prefetched = (g_eagerBuffersPromise && initialSelected.length === g_manifest.length)
+				? g_eagerBuffersPromise : null;
+			await loadSelection(initialSelected, prefetched);
 			corpusDirty = false;
 		} else {
 			loadDone(); // nothing to load; hide the loading overlay
 		}
+		g_eagerBuffersPromise = null; // one-shot; later rebuilds fetch per selection
 	};
 
 

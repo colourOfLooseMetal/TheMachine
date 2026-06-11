@@ -25,18 +25,23 @@ WAMS = "Web Assembly Machine Searcher."
    `extern "C" search()` in `wams.cpp` → `cppSearch(query)`.
 4. **Stage 1 — filter (bitap):** `SearchStringFuzzy` runs fuzzy Bitap
    (Baeza-Yates–Gonnet, edit distance `k = queryLen/2`, patterns ≤31 chars)
-   against every line in `g_corpus` (via `lineAt(i)`). Hits set a flag in
-   `g_bitSet` and record the match offset in `g_matchIndex`.
-5. **Stage 2 — score (jaro window):** for each filtered line,
-   `jaro_sliding_window` slides the query across the line with space-padding
-   and scores via Jaro-style char matching (`jaro_actual_search*`). Score is
-   then penalized by match index (`-idx*.002`) and length difference
-   (`-lenDiff*.0005`) so earlier, tighter matches rank higher.
-6. **Sort:** `hashSortIndices` does an O(n) counting sort over all scores
-   (groups equal scores, maps each to its first sorted slot) → `sortedIndices`.
-7. **Return:** top 450 results packed as `["text",corpusIndex, …]END000` JSON
-   (`Scores::to_json`, `escape_json`), handed to JS by calling `egg(json)` via
-   `EM_ASM`. The `END000` sentinel is trimmed JS-side (stray-char workaround).
+   against every line in `g_corpus` (via `lineAt(i)`). The pattern mask and `R`
+   rows are prepped once per search in `cppSearch`, not per line, and lines
+   shorter than `queryLen − k` are skipped without scanning. Each hit pushes a
+   `Survivor{line, matchIdx, score}` onto `g_survivors`.
+5. **Stage 2 — score (jaro window):** for each survivor,
+   `jaro_sliding_window` slides the space-padded query (padded once per search,
+   see `PaddedQuery`) across the line and scores via Jaro-style char matching
+   (`jaro_actual_search*`). Score is then penalized by match index
+   (`-idx*.002`) and length difference (`-lenDiff*.0005`) so earlier, tighter
+   matches rank higher.
+6. **Sort:** `std::partial_sort` over just `g_survivors` for the top 450
+   (descending score; ties keep ascending line order).
+7. **Return:** top `min(450, #survivors)` results packed as
+   `["text",corpusIndex, …]END000` JSON (`Scores::to_json`, `escape_json`),
+   handed to JS by calling `egg(json)` via `EM_ASM`. The `END000` sentinel is
+   trimmed JS-side (stray-char workaround). Only real bitap survivors come
+   back — fewer than 450 matches means fewer than 450 results.
 8. **Render:** `egg()` parses the JSON; `get_dir_and_index_from_biglistnum`
    binary-searches `loadedShows[]` to convert each active-corpus index →
    `[showDir, perShowImageNum]`;
@@ -64,13 +69,15 @@ Function roster, top to bottom — the two stages plus their helpers:
   capacity) and resets `g_totalLines`; called before loading a new selection.
 - `lineAt(i)` — inline: returns `g_corpus.data() + g_lineOffsets[i]`, the null-
   terminated caption string for line `i` in the active corpus.
-- `ensureWorkArrays(n)` — resizes `scoresArr`, `sortedIndices`, `g_bitSet`,
-  `g_matchIndex` to `n` when corpus size changes; no-op when already correct size.
-- `hashSortIndices(values, n, sortedIndices)` — **stage 3**, the O(n) counting
-  sort. Counts each distinct score in a `map<double,int>`, maps each score to
-  its first slot in descending order, then scatters every original index into
-  `sortedIndices` grouped by score (and rewrites `values[]` into sorted order).
-- `printArray(...)` — debug dump of the top 100 (only called when `cLog`).
+- `lineLen(i)` — inline: line `i`'s length in O(1) from the offset gap to the
+  next line (no strlen).
+- `Survivor` / `g_survivors` — the per-search hit list `{line, matchIdx, score}`.
+  Stage 1 pushes entries, stage 2 fills scores, stage 3 partial_sorts it.
+  Replaced the old full-corpus work arrays (`scoresArr`/`sortedIndices`/
+  `g_bitSet`/`g_matchIndex`) and their per-search multi-MB fills.
+- `printArray(topN)` — debug dump of the top 100 (only called when `cLog`).
+- `PaddedQuery` — the query plus its `" "+q` / `q+" "` / `" "+q+" "` paddings,
+  built once per search in `cppSearch` for the sliding window.
 - `jaro_actual_search(s1,s2,l1,l2,match_distance)` — Jaro-style char match used
   when the query is **longer** than the line (no sliding). Score
   `= (actualMatches + t) / l2`, where `t` adds 0.1 per matched-but-displaced
@@ -79,24 +86,28 @@ Function roster, top to bottom — the two stages plus their helpers:
   core, but discounts the space-padding around the query so leading/trailing
   matches don't inflate the denominator (`extraSpaceLoc` = 0 both / 1 prefix /
   2 suffix). Its long comment block is the canonical scoring explanation.
-- `jaro_sliding_window(string,strLen,pattern,patLen,max_distance,matchIndex)` —
+- `jaro_sliding_window(string,strLen,pq,patLen,max_distance,matchIndex)` —
   **stage 2**. Slides the space-padded query across the line near `matchIndex`
   (window `[matchIndex-1 … matchIndex+patLen+2]`), scores each offset with the
-  windowed Jaro, returns the max. Lines shorter than the query fall back to
+  windowed Jaro, returns the max. The window is a pointer offset into the line
+  (no substr copies). Lines shorter than the query fall back to
   `jaro_actual_search`.
 - `SearchString(text,pattern)` — exact (non-fuzzy) Bitap. **Unused** at runtime,
   kept as reference.
-- `SearchStringFuzzy(text,pattern,k)` — **stage 1**, fuzzy Bitap (Levenshtein
-  ≤ k). Returns the match offset, or -1.
-- `cppSearch(query)` — orchestrates stage 1 → 2 → 3, filling `scoresArr` and
-  `sortedIndices`. Calls `ensureWorkArrays(g_totalLines)` at the top; resets
-  `g_bitSet` and `g_matchIndex` each call.
+- `SearchStringFuzzy(text,patternMask,R,m,k)` — **stage 1**, fuzzy Bitap
+  (≤ k errors). The mask/`R` prep lives in `cppSearch` (once per search, not
+  per line). Returns the match offset, or -1. Text bytes index the mask as
+  `unsigned char` (256-entry table) so non-ascii can't read off the end.
+- `cppSearch(query)` — orchestrates stage 1 → 2 → 3, filling and sorting
+  `g_survivors`. Stage-1 prep (mask, R rows, the 31-char cap and empty-query
+  early-outs) happens here.
 - `Score` / `Scores` — tiny result holders; `Scores::to_json()` emits
-  `["text",idx,…]END000`.
+  `["text",idx,…]END000` as one `std::string` (no manual char* copy).
 - `extern "C" search(query)` — the wasm export: runs `cppSearch`, packs top
-  `min(450, g_totalLines)` via `Scores`, calls `egg(json)` through `EM_ASM`,
-  then resets `scoresArr` and `sortedIndices`.
-- `main()` — native entry point; mostly commented-out timing/debug scaffold.
+  `min(450, #survivors)` via `Scores`, calls `egg(json)` through `EM_ASM`.
+- `main()` — native test entry point (compiled out under `__EMSCRIPTEN__`):
+  `g++ -O3 wams.cpp -o wams && ./wams "query" data/sm.txt …` loads the .txt
+  files through the same exports JS uses and prints the top 450 with scores.
 
 Scoring constants: stage-1 edit budget `k = queryLen/2`; stage-2
 `match_distance = 2` (a swapped char up to 2 away still scores); rank penalties
@@ -119,9 +130,11 @@ Originally one ~4.5k-line HTML file; now split three ways (behaviour unchanged):
   for custom checkbox rendering via `input[type="checkbox"] + label:before` —
   checkboxes must be `<input>` + `<label>` siblings, not nested.
 - `js/app.js` — all page logic. Key functions:
-  - `loadSelection(selectedShows)` — clears corpus, calls `reserveCorpus` with
-    exact totals, then fetches each show's `.txt`, writes bytes directly into
-    wasm memory via `showWritePtr`/`commitShow`, builds `loadedShows[]`.
+  - `loadSelection(selectedShows, prefetched?)` — clears corpus, calls
+    `reserveCorpus` with exact totals, fetches all shows' `.txt` **in parallel**
+    (`fetchShows`, or takes the eager-prefetch promise), then writes bytes
+    directly into wasm memory via `showWritePtr`/`commitShow` in manifest
+    order, builds `loadedShows[]`.
   - `search()` — async; checks `corpusDirty` and awaits `loadSelection` if needed,
     then calls `wamsSearch(query.toLowerCase())`.
   - `egg(json)` — wasm→JS callback: trims `END000`, `JSON.parse`, builds cards.
@@ -130,9 +143,13 @@ Originally one ~4.5k-line HTML file; now split three ways (behaviour unchanged):
     map active-corpus index → `[dir, perShowImageNum]`.
   - `loadMore()` — infinite scroll (reveals 10 more cards per scroll event).
   - `darkMode()`, and the ← / → image-scrubbing handlers.
-  - `Module.onRuntimeInitialized` (async) — fetches `manifest.json`, generates
+  - `Module.onRuntimeInitialized` (async) — awaits the manifest, generates
     show checkboxes (desktop: all checked; mobile: all unchecked), wires the
     `change` listener to set `corpusDirty`, does the eager initial load on desktop.
+  - The `manifest.json` fetch (and on desktop the whole-corpus prefetch,
+    `g_eagerBuffersPromise`) starts at **parse time** so the ~12 MB download
+    overlaps the wasm compile instead of waiting for `onRuntimeInitialized`;
+    only the commit-into-wasm step waits for the runtime.
 
 ## Active-corpus index → show map
 
@@ -235,7 +252,7 @@ js/app.js               — all page logic: corpus load, show checkboxes, lazy
                           scroll, dark mode, img scrubbing
 
 wams.cpp                — THE engine: bitap filter + jaro sliding-window scorer +
-                          counting sort + JSON/egg() bridge + corpus management
+                          survivor partial_sort + JSON/egg() bridge + corpus management
                           exports (reserveCorpus/showWritePtr/commitShow/clearCorpus)
 data.h                  — legacy header (static corpus externs, now all commented
                           out; kept so standalone .cpp experiments don't break)
@@ -282,8 +299,8 @@ Exceptions tracked: `manifest.json`, `data/`, `data/*.txt` (explicit `!` rules i
   server, (5) run `build.ps1` to rebuild `dist/`, (6) deploy. No C++ recompile
   needed.
 - `g_totalLines` is the runtime corpus size (set as shows load via `commitShow`).
-  Work arrays are resized automatically via `ensureWorkArrays`. There is no static
-  corpus size constant anymore.
+  Per-search state lives in `g_survivors` (cleared each search). There is no
+  static corpus size constant anymore.
 - The codebase is intentionally rough (commented-out scratch, profiling prints
   behind `cLog`). Preserve the existing comment voice when editing.
 - Debug output is gated behind `const bool cLog` (default `false`) — flip to
@@ -298,8 +315,8 @@ Exceptions tracked: `manifest.json`, `data/`, `data/*.txt` (explicit `!` rules i
 
 ## Known rough edges (candidates when refining)
 
-- Bitap patterns are capped at 31 chars (`if (m > 31) return -1;`) — queries
+- Bitap patterns are capped at 31 chars (checked in `cppSearch` now) — queries
   longer than 31 chars silently match nothing in stage 1.
-- Result count is hard-capped at `min(450, g_totalLines)` in `search()`.
+- Result count is hard-capped at `min(450, #survivors)` in `search()`.
 - `data/*.txt` files should be served with `Content-Encoding: gzip` and
   `Cache-Control: max-age=86400` on the live server for efficient show re-selection.
