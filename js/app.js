@@ -151,6 +151,16 @@
 	var loadedShows = [];
 	// Manifest entry list fetched once; cached so checkbox toggles re-use it without re-fetching JSON.
 	var g_manifest = null;
+	// Movies attribution map [{title, start, lines}, ...] ascending by start, for the single
+	// "movies" dataset. Lets a result card show which film an image came from. null if absent
+	// (the file only exists once a movies set has been built by addNewContent/04_build_dataset.py).
+	var g_moviesMap = null;
+	// Legacy image host: the original 12 shows live at colourofloosemetal.com/assets/<dir>/.
+	// Newer sets (movies + anything the addNewContent pipeline emits) live on the DigitalOcean
+	// Space instead. A manifest row may carry an optional `base` (host root before <dir>/<n>.jpg);
+	// rows without one fall back to the legacy host. dir -> base lookup is built at manifest load.
+	var DEFAULT_ASSET_BASE = "https://colourofloosemetal.com/assets/";
+	var g_assetBase = {};
 	// True when the checkbox selection has changed since the last corpus load.
 	// search() rebuilds the corpus before searching if this is set, then clears it.
 	var corpusDirty = true;
@@ -191,6 +201,18 @@
 
 		// Fetch manifest (single source of truth for show order, line counts, byte sizes).
 		g_manifest = await (await fetch('manifest.json')).json();
+
+		// Build the dir -> image-host map (per-row `base` if present, else the legacy host).
+		g_manifest.forEach(function (r) { g_assetBase[r.dir] = r.base || DEFAULT_ASSET_BASE; });
+
+		// Movies attribution map (optional): present only once a movies set exists. Fetch it
+		// best-effort so the page still works when it's absent (404 / not yet deployed).
+		try {
+			var mmResp = await fetch('data/movies_map.json');
+			if (mmResp.ok) g_moviesMap = await mmResp.json();
+		} catch (e) {
+			console.log("no movies_map.json (movies set not built yet)");
+		}
 
 		// Determine mobile default: detect by UA, same regex already used elsewhere in app.js.
 		var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -326,6 +348,19 @@
 		var show = loadedShows[lo];
 		return [show.dir, blNum - show.start];
 	}
+	// For the "movies" dataset: map a per-set image number to its film title via g_moviesMap
+	// (same ascending-start binary search as above). Returns the bare key if no map/film found.
+	function movieTitleForImageNum(imgNum) {
+		if (!g_moviesMap || g_moviesMap.length === 0) return "movies";
+		var lo = 0, hi = g_moviesMap.length - 1;
+		while (lo < hi) {
+			var mid = (lo + hi + 1) >> 1;
+			if (g_moviesMap[mid].start <= imgNum) lo = mid;
+			else hi = mid - 1;
+		}
+		var film = g_moviesMap[lo];
+		return (imgNum >= film.start && imgNum < film.start + film.lines) ? film.title : "movies";
+	}
 	// Build one result card (screenshot + caption + prev/next buttons) and push its HTML onto
 	// outputContent[]. resultObj is a single [text, globalIndex] pair handed over by egg().
 	// (The "fuse" mention is historical - matching is the wasm engine now, not Fuse.js.)
@@ -336,7 +371,7 @@
 		output += '<div class="col-md-6 well">';
 		output +=
 			'<div class="col-md-3"><img class="img-responsive" id="' + dirNnum[0] + dirNnum[1] + '" object-fit: contain" src="' +
-			"https://colourofloosemetal.com/assets/" + dirNnum[0] + "/" +
+			(g_assetBase[dirNnum[0]] || DEFAULT_ASSET_BASE) + dirNnum[0] + "/" +
 			dirNnum[1] +
 			".jpg" +
 			'" alt="' +
@@ -352,7 +387,9 @@
 		output += '<div class="col-md-7">';
 
 		output += "<h4>" + resultObj[0] + "</h4>";
-		output += "<p><small>" + dirNnum[0] + "</small></p>";
+		// For the movies set, show the film title (via the boundary map) instead of the bare dir.
+		var caption = (dirNnum[0] === 'movies') ? movieTitleForImageNum(dirNnum[1]) : dirNnum[0];
+		output += "<p><small>" + caption + "</small></p>";
 
 
 		//output += "<h2>" + resultObj["num"] + "</h2>";

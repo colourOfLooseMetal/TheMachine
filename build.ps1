@@ -85,11 +85,17 @@ if ($code -ne 0) {
 Write-Host ("Build OK in {0:N1}s  ->  dist/wams.js + dist/wams.wasm" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
 
 # --- assemble deploy folder ------------------------------------------------
+# Copy folder CONTENTS (src\*) into pre-created dirs, not the folder itself.
+# Copy-Item src -Recurse on an existing dest would nest (dist\data\data), so
+# we use src\* to merge contents directly — safe on both first and re-builds.
 Copy-Item "$root\MachineFtWams.html" $dist -Force
 Copy-Item "$root\manifest.json"      $dist -Force
-Copy-Item "$root\css"  "$dist\css"  -Recurse -Force
-Copy-Item "$root\js"   "$dist\js"   -Recurse -Force
-Copy-Item "$root\data" "$dist\data" -Recurse -Force
+New-Item -ItemType Directory -Force "$dist\css"  | Out-Null
+New-Item -ItemType Directory -Force "$dist\js"   | Out-Null
+New-Item -ItemType Directory -Force "$dist\data" | Out-Null
+Copy-Item "$root\css\*"  "$dist\css"  -Recurse -Force
+Copy-Item "$root\js\*"   "$dist\js"   -Recurse -Force
+Copy-Item "$root\data\*" "$dist\data" -Recurse -Force
 Write-Host "Deploy folder assembled -> dist/   (drag contents to FileZilla to deploy)" -ForegroundColor Green
 
 # --- optional local server -------------------------------------------------
